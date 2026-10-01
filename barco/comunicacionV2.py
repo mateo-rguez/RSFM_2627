@@ -1,6 +1,23 @@
+"""
+
+
+
+
+
+
+
+
+
+
+
+NO SE USA
+
+
+
+
 import socket
 import os
-
+# Este realmente no se usa.
 
 def conectar_estacion(ip, puerto):
 
@@ -71,3 +88,5 @@ if __name__ == "__main__":
         if exito:
             print("¡Fichero enviado con éxito!")
         cerrar_conexion(sock)
+
+"""

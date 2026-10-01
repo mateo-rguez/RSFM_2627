@@ -1,10 +1,18 @@
-```python
 import socket
 import os
 
 
-def conectar_estacion(ip, puerto):
+def conectar_estacion(ip: str, puerto: int) -> socket.socket | None:
+    """
+    Conecta a una estación en la dirección IP y puerto especificados.
 
+    Args:
+        ip: Dirección IP de la estación.
+        puerto: Puerto de la estación.
+
+    Returns:
+        Un objeto socket si la conexión es exitosa, None en caso de error.
+    """
     try:
         socket_id = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         socket_id.connect((ip, puerto))
@@ -16,7 +24,17 @@ def conectar_estacion(ip, puerto):
         return None
 
 
-def enviar_fichero(socket_id, nombre_fichero):
+def enviar_fichero(socket_id: socket.socket, nombre_fichero: str) -> bool:
+    """
+    Envía un fichero a través de un socket.
+
+    Args:
+        socket_id: Objeto socket a través del cual se enviará el fichero.
+        nombre_fichero: Nombre del fichero a enviar.
+
+    Returns:
+        True si el envío es exitoso, False en caso de error.
+    """
 
     try:
         fichero = open(nombre_fichero, "rb")
@@ -55,7 +73,13 @@ def enviar_fichero(socket_id, nombre_fichero):
     return True
 
 
-def cerrar_conexion(socket_id):
+def cerrar_conexion(socket_id: socket.socket) -> None:
+    """
+    Cierra la conexión del socket.
+
+    Args:
+        socket_id: Objeto socket a cerrar.
+    """
 
     socket_id.close()
-```
+
