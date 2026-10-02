@@ -40,21 +40,39 @@ class TelemetryCollector:
         self.motion_sensor = MotionSensor(simulated=not self.hardware_active)
 
     def _read_serial_data(self):
-        """Lee la trama de texto más reciente recibida desde la placa Arduino/Metro."""
-        raw_data = {}
-        if self.hardware_active and self.ser and self.ser.in_waiting > 0:
-            try:
-                line = self.ser.readline().decode('utf-8', errors='ignore').strip()
+        """Lee y decodifica una trama JSON recibida desde el Arduino."""
+        if not self.hardware_active or not self.ser:
+            return {}
 
-                # Espera formato: DIST:24.5,AX:0.01,AY:0.02,AZ:9.80
-                parts = line.split(',')
-                for p in parts:
-                    if ':' in p:
-                        k, v = p.split(':', 1)
-                        raw_data[k.strip()] = float(v.strip())
-            except Exception:
-                pass
-        return raw_data
+        latest_data = {}
+
+        try:
+            while self.ser.in_waiting > 0:
+                line = self.ser.readline().decode("utf-8", errors="ignore").strip()
+
+                if not line:
+                    return {}
+
+                # Ignorar mensajes informativos del Arduino
+                if not line.startswith("{"):
+                    print(f"[ARDUINO] {line}")
+                    return {}
+
+                try:
+                    data = json.loads(line)
+                    latest_data = data
+                
+                except json.JSONDecodeError:
+                    continue 
+
+        except OSError as e:
+            print(f"[WARN] Error de comunicación serie: {e}")
+            self.hardware_active = False
+
+        except Exception as e:
+            print(f"[WARN] Error leyendo puerto serie: {e}")
+
+        return latest_data
 
     def collect(self):
         """
@@ -64,9 +82,16 @@ class TelemetryCollector:
         raw = self._read_serial_data()
 
         # Extraemos valores para cada módulo si existen
-        raw_dist = raw.get("DIST")
-        raw_accel = {"x": raw["AX"], "y": raw["AY"], "z": raw["AZ"]} if "AZ" in raw else None
-        raw_gyro = {"x": raw["GX"], "y": raw["GY"], "z": raw["GZ"]} if "GZ" in raw else None
+        raw_dist = None
+        raw_accel = None
+        raw_gyro = None
+
+        if raw:
+            ultrasonic = raw.get("ultrasonic", {})
+            raw_dist = ultrasonic.get("distance_cm")
+
+            raw_accel = raw.get("accel")
+            raw_gyro = raw.get("gyro")
 
         return {
             "timestamp": round(time.time(), 3),
