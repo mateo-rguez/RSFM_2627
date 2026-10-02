@@ -82,29 +82,29 @@ class TelemetryCollector:
 
 if __name__ == "__main__":
     collector = TelemetryCollector()
-    output_filename = "datos.txt"
+    output_filename = "datos.json"
 
-    print(f"Iniciando adquisición a 10 Hz. Guardando en '{output_filename}'")
+    # Periodo de actualización de datos (en segundos)
+    period = 1.0
 
-    # Abrimos datos.txt en modo 'a' (append) para añadir líneas sin borrar lo anterior
+    print(f"Iniciando adquisición a ({1/period:.1f} Hz) Hz. Guardando en '{output_filename}'")
+
     try:
-        with open(output_filename, mode="a", encoding="utf-8") as f:
             while True:
                 packet = collector.collect()
 
-                # 1. Mostrar por pantalla
-                log_line = (f"[{packet['timestamp']}] "
-                            f"Altitud: {packet['altitude']['altitude_m']} m (OK: {packet['altitude']['valid']}) | "
-                            f"Accel Z: {packet['motion']['accel']['z']} m/s² (OK: {packet['motion']['valid']})")
-                print(log_line)
+                # Mostrar por consola
+                print(f"[{packet['timestamp']}] "
+                    f"Altitud: {packet['altitude']['altitude_m']} m (OK: {packet['altitude']['valid']}) | "
+                    f"Accel Z: {packet['motion']['accel']['z']} m/s² (OK: {packet['motion']['valid']})")
 
-                # 2. Guardar en datos.txt en formato JSON por línea
-                f.write(json.dumps(packet) + "\n")
-                f.flush()  # Fuerza el guardado inmediato en disco
+                # Modo 'w' sobrescribe el archivo en cada iteración guardando solo el último registro
+                with open(output_filename, mode="w", encoding="utf-8") as f:
+                    json.dump(packet, f, indent=2)
 
-                time.sleep(0.1)
+                time.sleep(sample_period)
 
-    except KeyboardInterrupt:
-        print(f"\nDeteniendo adquisición. Datos almacenados en '{output_filename}'.")
-    finally:
-        collector.close()
+        except KeyboardInterrupt:
+            print(f"\nLectura finalizada. Último estado conservado en '{output_filename}'.")
+        finally:
+            collector.close()
