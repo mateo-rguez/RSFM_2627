@@ -1,7 +1,0 @@
-altitud=1.25
-aceleracion_x=0.15
-aceleracion_y=-0.03
-aceleracion_z=9.81
-rotacion_x=0.20
-rotacion_y=-0.10
-rotacion_z=0.05
