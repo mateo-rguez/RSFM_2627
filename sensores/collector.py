@@ -1,10 +1,12 @@
 """
 Coordinador principal de telemetría.
 Se encarga de la interfaz de comunicaciones serie con el hardware (Adafruit Metro),
-consulta los módulos de altitud y movimiento, y genera el paquete de datos unificado.
+consulta los módulos de altitud y movimiento, genera el paquete de datos unificado
+y lo almacena en un archivo local (datos.txt).
 """
 
 import time
+import json
 from altitude_sensor import AltitudeSensor
 from motion_sensor import MotionSensor
 
@@ -45,7 +47,6 @@ class TelemetryCollector:
                 line = self.ser.readline().decode('utf-8', errors='ignore').strip()
 
                 # Espera formato: DIST:24.5,AX:0.01,AY:0.02,AZ:9.80
-                
                 parts = line.split(',')
                 for p in parts:
                     if ':' in p:
@@ -81,15 +82,29 @@ class TelemetryCollector:
 
 if __name__ == "__main__":
     collector = TelemetryCollector()
-    print("Iniciando adquisición de telemetría a 10 Hz (Ctrl+C para salir)...")
+    output_filename = "datos.txt"
+
+    print(f"Iniciando adquisición a 10 Hz. Guardando en '{output_filename}'")
+
+    # Abrimos datos.txt en modo 'a' (append) para añadir líneas sin borrar lo anterior
     try:
-        while True:
-            packet = collector.collect()
-            print(f"[{packet['timestamp']}] "
-                  f"Altitud: {packet['altitude']['altitude_m']} m (OK: {packet['altitude']['valid']}) | "
-                  f"Accel Z: {packet['motion']['accel']['z']} m/s² (OK: {packet['motion']['valid']})")
-            time.sleep(0.1)
+        with open(output_filename, mode="a", encoding="utf-8") as f:
+            while True:
+                packet = collector.collect()
+
+                # 1. Mostrar por pantalla
+                log_line = (f"[{packet['timestamp']}] "
+                            f"Altitud: {packet['altitude']['altitude_m']} m (OK: {packet['altitude']['valid']}) | "
+                            f"Accel Z: {packet['motion']['accel']['z']} m/s² (OK: {packet['motion']['valid']})")
+                print(log_line)
+
+                # 2. Guardar en datos.txt en formato JSON por línea
+                f.write(json.dumps(packet) + "\n")
+                f.flush()  # Fuerza el guardado inmediato en disco
+
+                time.sleep(0.1)
+
     except KeyboardInterrupt:
-        print("\nDeteniendo adquisición...")
+        print(f"\nDeteniendo adquisición. Datos almacenados en '{output_filename}'.")
     finally:
         collector.close()
