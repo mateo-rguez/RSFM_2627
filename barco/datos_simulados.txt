@@ -1,4 +1,1 @@
-Timestamp,Altitud,Movimiento_X,Movimiento_Y
-1698765432,12.5,0.01,0.05
-1698765433,12.6,0.02,0.04
-1698765434,12.4,-0.01,0.06
+{"timestamp": 1790951871.345, "altitude": {"distance_cm": 46.31, "altitude_m": 0.463, "valid": true}, "motion": {"accel": {"x": 0.057, "y": -0.03, "z": 9.81}, "gyro": {"x": 0.006, "y": 0.002, "z": -0.007}, "valid": true}}
