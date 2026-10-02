@@ -20,7 +20,7 @@ except ImportError:
 class TelemetryCollector:
     """Gestiona la lectura coordinada de todos los sensores."""
 
-    def __init__(self, port='/dev/ttyACM0', baudrate=115200):
+    def __init__(self, port='/dev/ttyUSB0', baudrate=38400):
         self.ser = None
         self.hardware_active = False
 
@@ -30,8 +30,8 @@ class TelemetryCollector:
                 self.ser.reset_input_buffer()
                 self.hardware_active = True
                 print(f"[INFO] Conexión serie activa en {port}")
-            except Exception:
-                print(f"[WARN] No se detectó hardware en {port}. Iniciando modo SIMULACIÓN.")
+            except Exception as e:
+                print(f"[WARN] No se detectó hardware en {port}: {e}. Iniciando modo SIMULACIÓN.")
         else:
             print("[WARN] Librería pyserial no disponible. Modo SIMULACIÓN activo.")
 
@@ -90,21 +90,21 @@ if __name__ == "__main__":
     print(f"Iniciando adquisición a ({1/period:.1f} Hz) Hz. Guardando en '{output_filename}'")
 
     try:
-            while True:
-                packet = collector.collect()
+        while True:
+            packet = collector.collect()
 
-                # Mostrar por consola
-                print(f"[{packet['timestamp']}] "
-                    f"Altitud: {packet['altitude']['altitude_m']} m (OK: {packet['altitude']['valid']}) | "
-                    f"Accel Z: {packet['motion']['accel']['z']} m/s² (OK: {packet['motion']['valid']})")
+            # Mostrar por consola
+            print(f"[{packet['timestamp']}] "
+               f"Altitud: {packet['altitude']['altitude_m']} m (OK: {packet['altitude']['valid']}) | "
+               f"Accel Z: {packet['motion']['accel']['z']} m/s² (OK: {packet['motion']['valid']})")
 
-                # Modo 'w' sobrescribe el archivo en cada iteración guardando solo el último registro
-                with open(output_filename, mode="w", encoding="utf-8") as f:
-                    json.dump(packet, f, indent=2)
+            # Modo 'w' sobrescribe el archivo en cada iteración guardando solo el último registro
+            with open(output_filename, mode="w", encoding="utf-8") as f:
+                json.dump(packet, f, indent=2)
 
-                time.sleep(sample_period)
+            time.sleep(period)
 
-        except KeyboardInterrupt:
-            print(f"\nLectura finalizada. Último estado conservado en '{output_filename}'.")
-        finally:
-            collector.close()
+    except KeyboardInterrupt:
+        print(f"\nLectura finalizada. Último estado conservado en '{output_filename}'.")
+    finally:
+        collector.close()

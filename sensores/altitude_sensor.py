@@ -26,12 +26,19 @@ class AltitudeSensor:
         :param raw_distance_cm: Valor numérico recibido del sensor físico (o None si no hay).
         :return: Diccionario con la distancia en cm, altitud en metros y flag de validez.
         """
-        if self.simulated or raw_distance_cm is None:
+        if self.simulated:
             # Simulación: distancias plausibles sobre la superficie (20 a 50 cm)
             distance_cm = round(random.uniform(20.0, 50.0), 2)
             is_valid = True
+
+        elif raw_distance_cm is None:
+            return{
+                "distance_cm": None,
+                "altitude_m": None,
+                "valid": False
+            } 
         else:
-            distance_cm = round(float(raw_distance_cm), 2)
+            distance_cm = round(float(raw_distance_cm), 3)
             # Validación según criterios DoD: rango técnico operativo
             is_valid = (MIN_VALID_DISTANCE_CM <= distance_cm <= MAX_VALID_DISTANCE_CM)
 

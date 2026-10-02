@@ -31,7 +31,7 @@ class MotionSensor:
         :param raw_gyro: Diccionario con claves 'x', 'y', 'z' de velocidad angular real.
         :return: Diccionario con vectores y flag booleano de validez.
         """
-        if self.simulated or raw_accel is None:
+        if self.simulated:
             # Simulación: Barco en reposo con suave oleaje
             ax = round(random.uniform(-0.1, 0.1), 3)
             ay = round(random.uniform(-0.1, 0.1), 3)
@@ -39,10 +39,16 @@ class MotionSensor:
             gx = round(random.uniform(-0.02, 0.02), 3)
             gy = round(random.uniform(-0.02, 0.02), 3)
             gz = round(random.uniform(-0.02, 0.02), 3)
+        elif raw_accel is None:
+            return {
+                "accel": {"x": None, "y": None, "z": None},
+                "gyro": {"x": None, "y": None, "z": None},
+                "valid": False
+            }
         else:
-            ax = float(raw_accel.get("x", 0.0))
-            ay = float(raw_accel.get("y", 0.0))
-            az = float(raw_accel.get("z", GRAVITY_NOMINAL))
+            ax = float(raw_accel.get("x", 0.0)) * GRAVITY_NOMINAL
+            ay = float(raw_accel.get("y", 0.0)) * GRAVITY_NOMINAL
+            az = float(raw_accel.get("z", 1.0)) * GRAVITY_NOMINAL
             gx = float(raw_gyro.get("x", 0.0)) if raw_gyro else 0.0
             gy = float(raw_gyro.get("y", 0.0)) if raw_gyro else 0.0
             gz = float(raw_gyro.get("z", 0.0)) if raw_gyro else 0.0

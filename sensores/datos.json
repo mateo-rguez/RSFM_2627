@@ -1,0 +1,21 @@
+{
+  "timestamp": 1790964954.367,
+  "altitude": {
+    "distance_cm": 62.0,
+    "altitude_m": 0.62,
+    "valid": true
+  },
+  "motion": {
+    "accel": {
+      "x": 3.21768,
+      "y": -3.52179,
+      "z": 8.829
+    },
+    "gyro": {
+      "x": 6.241,
+      "y": 2.266,
+      "z": 7.896
+    },
+    "valid": true
+  }
+}
