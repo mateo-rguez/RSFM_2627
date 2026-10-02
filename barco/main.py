@@ -9,8 +9,8 @@ from comunicacion import (
 
 
 
-SERVER_IP = "127.0.0.1"
-SERVER_PORT = 8000
+SERVER_IP = "10.42.0.1"
+SERVER_PORT = 5005
 FICHERO_A_ENVIAR = "datos_simulados.txt"
 
 
