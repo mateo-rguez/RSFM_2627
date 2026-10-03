@@ -1,0 +1,1 @@
+{"timestamp": "04-10-2026 01:48:34", "altitude": {"distance_cm": 37.43, "altitude_m": 0.374, "valid": true}, "motion": {"accel": {"x": -0.091, "y": 0.049, "z": 9.81}, "gyro": {"x": -0.017, "y": 0.006, "z": 0.015}, "valid": true}}
