@@ -10,7 +10,7 @@ import struct
 import time
 
 # Configuración de red y resolución según requisitos del proyecto
-SERVER_IP = "127.0.0.1"     # Cambiar por la IP de la estación de control en la red Wi-Fi
+SERVER_IP = "10.42.0.1"     # Cambiar por la IP de la estación de control
 SERVER_PORT = 5005
 FRAME_WIDTH = 640           # Resolución base 480p (640x480)
 FRAME_HEIGHT = 480          # Resolución base 480p (640x480)
