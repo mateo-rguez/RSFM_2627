@@ -20,7 +20,7 @@ except ImportError:
 class TelemetryCollector:
     """Gestiona la lectura coordinada de todos los sensores."""
 
-    def __init__(self, port='/dev/ttyACM0', baudrate=115200):
+    def __init__(self, port='/dev/ttyUSB0', baudrate=38400):
         self.ser = None
         self.hardware_active = False
 
@@ -30,8 +30,8 @@ class TelemetryCollector:
                 self.ser.reset_input_buffer()
                 self.hardware_active = True
                 print(f"[INFO] Conexión serie activa en {port}")
-            except Exception:
-                print(f"[WARN] No se detectó hardware en {port}. Iniciando modo SIMULACIÓN.")
+            except Exception as e:
+                print(f"[WARN] No se detectó hardware en {port}: {e}. Iniciando modo SIMULACIÓN.")
         else:
             print("[WARN] Librería pyserial no disponible. Modo SIMULACIÓN activo.")
 
@@ -40,21 +40,39 @@ class TelemetryCollector:
         self.motion_sensor = MotionSensor(simulated=not self.hardware_active)
 
     def _read_serial_data(self):
-        """Lee la trama de texto más reciente recibida desde la placa Arduino/Metro."""
-        raw_data = {}
-        if self.hardware_active and self.ser and self.ser.in_waiting > 0:
-            try:
-                line = self.ser.readline().decode('utf-8', errors='ignore').strip()
+        """Lee y decodifica una trama JSON recibida desde el Arduino."""
+        if not self.hardware_active or not self.ser:
+            return {}
 
-                # Espera formato: DIST:24.5,AX:0.01,AY:0.02,AZ:9.80
-                parts = line.split(',')
-                for p in parts:
-                    if ':' in p:
-                        k, v = p.split(':', 1)
-                        raw_data[k.strip()] = float(v.strip())
-            except Exception:
-                pass
-        return raw_data
+        latest_data = {}
+
+        try:
+            while self.ser.in_waiting > 0:
+                line = self.ser.readline().decode("utf-8", errors="ignore").strip()
+
+                if not line:
+                    return {}
+
+                # Ignorar mensajes informativos del Arduino
+                if not line.startswith("{"):
+                    print(f"[ARDUINO] {line}")
+                    return {}
+
+                try:
+                    data = json.loads(line)
+                    latest_data = data
+                
+                except json.JSONDecodeError:
+                    continue 
+
+        except OSError as e:
+            print(f"[WARN] Error de comunicación serie: {e}")
+            self.hardware_active = False
+
+        except Exception as e:
+            print(f"[WARN] Error leyendo puerto serie: {e}")
+
+        return latest_data
 
     def collect(self):
         """
@@ -64,9 +82,16 @@ class TelemetryCollector:
         raw = self._read_serial_data()
 
         # Extraemos valores para cada módulo si existen
-        raw_dist = raw.get("DIST")
-        raw_accel = {"x": raw["AX"], "y": raw["AY"], "z": raw["AZ"]} if "AZ" in raw else None
-        raw_gyro = {"x": raw["GX"], "y": raw["GY"], "z": raw["GZ"]} if "GZ" in raw else None
+        raw_dist = None
+        raw_accel = None
+        raw_gyro = None
+
+        if raw:
+            ultrasonic = raw.get("ultrasonic", {})
+            raw_dist = ultrasonic.get("distance_cm")
+
+            raw_accel = raw.get("accel")
+            raw_gyro = raw.get("gyro")
 
         return {
             "timestamp": round(time.time(), 3),
@@ -90,21 +115,21 @@ if __name__ == "__main__":
     print(f"Iniciando adquisición a ({1/period:.1f} Hz) Hz. Guardando en '{output_filename}'")
 
     try:
-            while True:
-                packet = collector.collect()
+        while True:
+            packet = collector.collect()
 
-                # Mostrar por consola
-                print(f"[{packet['timestamp']}] "
-                    f"Altitud: {packet['altitude']['altitude_m']} m (OK: {packet['altitude']['valid']}) | "
-                    f"Accel Z: {packet['motion']['accel']['z']} m/s² (OK: {packet['motion']['valid']})")
+            # Mostrar por consola
+            print(f"[{packet['timestamp']}] "
+               f"Altitud: {packet['altitude']['altitude_m']} m (OK: {packet['altitude']['valid']}) | "
+               f"Accel Z: {packet['motion']['accel']['z']} m/s² (OK: {packet['motion']['valid']})")
 
-                # Modo 'w' sobrescribe el archivo en cada iteración guardando solo el último registro
-                with open(output_filename, mode="w", encoding="utf-8") as f:
-                    json.dump(packet, f, indent=2)
+            # Modo 'w' sobrescribe el archivo en cada iteración guardando solo el último registro
+            with open(output_filename, mode="w", encoding="utf-8") as f:
+                json.dump(packet, f, indent=2)
 
-                time.sleep(sample_period)
+            time.sleep(period)
 
-        except KeyboardInterrupt:
-            print(f"\nLectura finalizada. Último estado conservado en '{output_filename}'.")
-        finally:
-            collector.close()
+    except KeyboardInterrupt:
+        print(f"\nLectura finalizada. Último estado conservado en '{output_filename}'.")
+    finally:
+        collector.close()
