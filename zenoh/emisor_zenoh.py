@@ -6,9 +6,11 @@ KEY_EXPRESSION = "barco/telemetria"
 FICHERO_DATOS = "datos_simulados.txt"
 
 def enviar_telemetria():
-    # Configuración e inicio de sesión en Zenoh
     conf = zenoh.Config()
-    print("[ZENOH] Abriendo sesión...")
+    # Usamos insert_json5 en lugar de insert_json
+    conf.insert_json5("connect/endpoints", '["tcp/10.42.0.1:7447"]')
+    
+    print("[ZENOH] Abriendo sesión y conectando al receptor...")
     session = zenoh.open(conf)
     
     try:
@@ -18,18 +20,15 @@ def enviar_telemetria():
                 if not linea_limpia:
                     continue
                 
-                # Validar que es un JSON correcto
                 try:
                     paquete = json.loads(linea_limpia)
                 except json.JSONDecodeError:
                     continue
 
-                # Publicar el mensaje en Zenoh
                 data_str = json.dumps(paquete)
                 session.put(KEY_EXPRESSION, data_str)
                 print(f"[EMISOR] Publicado en '{KEY_EXPRESSION}': {data_str}")
                 
-                # Simular intervalo de envío entre muestras (ej. 1 segundo)
                 time.sleep(1)
                 
     except FileNotFoundError:
