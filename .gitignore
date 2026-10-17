@@ -1,3 +1,7 @@
 *.txt
 __pycache__
-*.j
+*.json
+*.jsonl
+.venv/
+venv/
+env/
