@@ -13,18 +13,14 @@ datos_recibidos = []
 datos_lock = threading.Lock()
 
 def listener(sample):
-    """
-    Función callback que se ejecuta automáticamente cada vez 
-    que Zenoh recibe un dato en la clave 'barco/telemetria'.
-    """
+    print(f"Empieza a escuchar")
     try:
         payload_str = sample.payload.to_string()
         paquete = json.loads(payload_str)
-        
+        print(payload_str)
         with datos_lock:
             datos_recibidos.append(paquete)
             
-        # Guardar en disco a medida que llegan
         with open(FICHERO_GUARDADO, "a", encoding="utf-8") as f:
             json.dump(paquete, f)
             f.write("\n")
@@ -70,14 +66,12 @@ def graficar_datos(max_puntos=10):
             acc_y.append(accel.get("y", 0.0))
             acc_z.append(accel.get("z", 0.0))
 
-        # Ventana deslizante (últimas N muestras)
         timestamps_labels = timestamps_labels[-max_puntos:]
         altitudes = altitudes[-max_puntos:]
         acc_x = acc_x[-max_puntos:]
         acc_y = acc_y[-max_puntos:]
         acc_z = acc_z[-max_puntos:]
 
-        # 1. Altitud
         ax_alt.clear()
         ax_alt.plot(timestamps_labels, altitudes, marker='o', color='tab:blue', linewidth=2, label='Altitud (m)')
         ax_alt.set_title(f"Telemetría Zenoh en Tiempo Real (Últimas {len(timestamps_labels)} muestras)")
@@ -85,7 +79,6 @@ def graficar_datos(max_puntos=10):
         ax_alt.grid(True, linestyle='--', alpha=0.6)
         ax_alt.legend(loc='upper left')
 
-        # 2. Aceleraciones
         ax_acc.clear()
         ax_acc.plot(timestamps_labels, acc_x, marker='.', label='Acc X', color='tab:red')
         ax_acc.plot(timestamps_labels, acc_y, marker='.', label='Acc Y', color='tab:green')
@@ -102,14 +95,14 @@ def graficar_datos(max_puntos=10):
     plt.show()
 
 if __name__ == "__main__":
-    # Vaciar el fichero de guardado al iniciar
     open(FICHERO_GUARDADO, "w").close()
 
     conf = zenoh.Config()
-    print("[ZENOH] Abriendo sesión en la estación de control...")
+    conf.insert_json("listen/endpoints", json.dumps(["tcp/0.0.0.0:7447"]))
+    
+    print("[ZENOH] Abriendo sesión y configurando escucha en la estación de control...")
     session = zenoh.open(conf)
 
-    # Declarar suscriptor
     subscriber = session.declare_subscriber(KEY_EXPRESSION, listener)
     print(f"[ZENOH] Suscrito a '{KEY_EXPRESSION}'. Esperando datos...")
 
