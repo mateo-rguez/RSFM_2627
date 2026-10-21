@@ -8,13 +8,11 @@ suponer que los relojes de ambos equipos están sincronizados.
 
 Emisor (barco)::
 
-    python3 monitoring/zenoh_performance_monitor.py publisher \
-        --connect-endpoint tcp/10.42.0.1:7447 --duration 60
+    python3 monitoring/zenoh_performance_monitor.py publisher
 
 Receptor (estación)::
 
-    python3 monitoring/zenoh_performance_monitor.py subscriber \
-        --listen-endpoint tcp/0.0.0.0:7447 --duration 60
+    python3 monitoring/zenoh_performance_monitor.py subscriber
 
 Cada proceso guarda sus muestras periódicas en CSV y un resumen en JSON dentro
 de ``monitoring/results``. Además de las métricas de Zenoh, se registran CPU,
@@ -55,8 +53,9 @@ except ImportError:  # pragma: no cover - mensaje de instalación
     zenoh = None  # type: ignore[assignment]
 
 
-DEFAULT_CONNECT_ENDPOINT = "tcp/10.42.0.1:7447"
-DEFAULT_LISTEN_ENDPOINT = "tcp/0.0.0.0:7447"
+ZENOH_PORT = 7447
+DEFAULT_STATION_HOST = "10.42.0.1"
+DEFAULT_LISTEN_ENDPOINT = f"udp/0.0.0.0:{ZENOH_PORT}"
 DEFAULT_KEY_PREFIX = "barco/monitor/zenoh"
 CSV_FIELDS = [
     "timestamp",
@@ -307,16 +306,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("role", choices=("publisher", "subscriber"), help="Papel del proceso.")
     parser.add_argument(
-        "--connect-endpoint",
-        action="append",
-        default=[],
-        help="Endpoint al que se conecta el proceso; se puede repetir.",
-    )
-    parser.add_argument(
-        "--listen-endpoint",
-        action="append",
-        default=[],
-        help="Endpoint donde escucha Zenoh; se puede repetir. El receptor usa 0.0.0.0:7447 por defecto.",
+        "--station-host",
+        default=DEFAULT_STATION_HOST,
+        help=f"IP de la estación para el emisor (por defecto: {DEFAULT_STATION_HOST}).",
     )
     parser.add_argument(
         "--key-prefix",
@@ -387,8 +379,8 @@ def _build_record(
 
 
 def _run_publisher(args: argparse.Namespace, output: Path, summary_path: Path) -> None:
-    connect_endpoints = args.connect_endpoint or [DEFAULT_CONNECT_ENDPOINT]
-    session = _configure_session(connect_endpoints, args.listen_endpoint)
+    connect_endpoints = [f"udp/{args.station_host}:{ZENOH_PORT}"]
+    session = _configure_session(connect_endpoints, [])
     probe_key = f"{args.key_prefix.rstrip('/')}/probe"
     ack_key = f"{args.key_prefix.rstrip('/')}/ack"
     stats = PublisherStats()
@@ -463,7 +455,7 @@ def _run_publisher(args: argparse.Namespace, output: Path, summary_path: Path) -
 
 
 def _run_subscriber(args: argparse.Namespace, output: Path, summary_path: Path) -> None:
-    listen_endpoints = args.listen_endpoint or [DEFAULT_LISTEN_ENDPOINT]
+    listen_endpoints = [DEFAULT_LISTEN_ENDPOINT]
     session = _configure_session([], listen_endpoints)
     probe_key = f"{args.key_prefix.rstrip('/')}/probe"
     ack_key = f"{args.key_prefix.rstrip('/')}/ack"
@@ -547,11 +539,11 @@ def _write_summary(
         "payload_size_requested": args.payload_size,
         "key_prefix": args.key_prefix,
         "connect_endpoints": (
-            args.connect_endpoint or [DEFAULT_CONNECT_ENDPOINT]
+            [f"udp/{args.station_host}:{ZENOH_PORT}"]
             if role == "publisher"
             else []
         ),
-        "listen_endpoints": args.listen_endpoint or [DEFAULT_LISTEN_ENDPOINT],
+        "listen_endpoints": [DEFAULT_LISTEN_ENDPOINT],
         "totals": {
             key: value
             for key, value in final_stats.items()
@@ -570,8 +562,58 @@ def _write_summary(
         },
     }
     summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+    report_path = output.with_name(f"{output.stem}_report.txt")
+
+    def format_metric(label: str, values: dict[str, float | None], unit: str = "") -> str:
+        def value(key: str) -> str:
+            item = values.get(key)
+            return "n/d" if item is None else f"{item:.2f}{unit}"
+
+        return (
+            f"{label}: media={value('mean')}, mínimo={value('min')}, "
+            f"máximo={value('max')}, p95={value('p95')}"
+        )
+
+    report_lines = [
+        "INFORME DE PRESTACIONES DE ZENOH",
+        "=================================",
+        f"Rol: {role}",
+        f"Generado: {summary['generated_at']}",
+        f"Duración: {summary['duration_s']} s",
+        f"Muestras registradas: {summary['samples']}",
+        f"Intervalo: {summary['interval_s']} s",
+        f"Tamaño de payload solicitado: {summary['payload_size_requested']} bytes",
+        "",
+        "COMUNICACIÓN",
+        "------------",
+        format_metric("RTT", summary["metrics"]["rtt_ms"], " ms"),
+        format_metric("Mensajes enviados por segundo", summary["metrics"]["sent_messages_per_s"]),
+        format_metric("Mensajes recibidos por segundo", summary["metrics"]["received_messages_per_s"]),
+        format_metric("Caudal enviado", summary["metrics"]["sent_mbit_per_s"], " Mbit/s"),
+        format_metric("Caudal recibido", summary["metrics"]["received_mbit_per_s"], " Mbit/s"),
+        f"Mensajes enviados: {final_stats['sent_messages']}",
+        f"Mensajes recibidos: {final_stats['received_messages']}",
+        f"Mensajes confirmados: {final_stats['acknowledged_messages']}",
+        f"Mensajes perdidos: {final_stats['lost_messages']}",
+        f"Pérdida estimada: {final_stats['loss_percent']:.2f}%",
+        f"Duplicados: {final_stats['duplicate_messages']}",
+        "",
+        "RECURSOS DEL PROCESO Y SISTEMA",
+        "------------------------------",
+        format_metric("CPU del sistema", summary["metrics"]["system_cpu_percent"], "%"),
+        format_metric("RAM del sistema", summary["metrics"]["system_memory_percent"], "%"),
+        format_metric("CPU del proceso", summary["metrics"]["process_cpu_percent"], "%"),
+        format_metric("RAM del proceso", summary["metrics"]["process_rss_mb"], " MB"),
+        "",
+        "ARCHIVOS DE DATOS",
+        "-----------------",
+        f"CSV: {output}",
+        f"JSON: {summary_path}",
+    ]
+    report_path.write_text("\n".join(report_lines) + "\n", encoding="utf-8")
     print(f"[INFO] Muestras guardadas en: {output}")
     print(f"[INFO] Resumen guardado en:    {summary_path}")
+    print(f"[INFO] Informe de texto guardado en: {report_path}")
 
 
 def main() -> int:

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Receptor de métricas de prestaciones para la estación.
 
-Escucha muestras JSON separadas por saltos de línea enviadas por
-``performance_monitor.py`` mediante TCP. Puede recibir datos de uno o varios
+Escucha muestras JSON enviadas por datagramas UDP desde
+``performance_monitor.py``. Puede recibir datos de uno o varios
 monitores y los conserva en CSV y JSONL.
 
 Ejemplo:
 
-    python3 monitoring/performance_station.py --port 8765
+    python3 monitoring/performance_station.py
 """
 
 from __future__ import annotations
@@ -20,6 +20,9 @@ import socketserver
 import threading
 from pathlib import Path
 from typing import Any
+
+
+MONITORING_PORT = 8765
 
 
 FIELDS = [
@@ -79,33 +82,29 @@ class RecordWriter:
         self.jsonl_file.close()
 
 
-class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+class ThreadedUDPServer(socketserver.ThreadingMixIn, socketserver.UDPServer):
     allow_reuse_address = True
     daemon_threads = True
 
 
-class PerformanceHandler(socketserver.StreamRequestHandler):
+class PerformanceHandler(socketserver.DatagramRequestHandler):
     def handle(self) -> None:
         writer: RecordWriter = self.server.writer  # type: ignore[attr-defined]
         client_ip = self.client_address[0]
-        print(f"[INFO] Monitor conectado desde {client_ip}:{self.client_address[1]}")
-
-        for raw_line in self.rfile:
-            try:
-                record = json.loads(raw_line.decode("utf-8"))
-                if not isinstance(record, dict):
-                    raise ValueError("la muestra no es un objeto JSON")
-                writer.write(record, client_ip)
-                print(
-                    f"[RECIBIDO] {client_ip} | "
-                    f"CPU {record.get('system_cpu_percent', '')}% | "
-                    f"RAM {record.get('system_memory_percent', '')}% | "
-                    f"muestras almacenadas: {writer.count}"
-                )
-            except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
-                print(f"[AVISO] Muestra ignorada desde {client_ip}: {error}")
-
-        print(f"[INFO] Monitor desconectado: {client_ip}")
+        raw_data = self.rfile.read()
+        try:
+            record = json.loads(raw_data.decode("utf-8"))
+            if not isinstance(record, dict):
+                raise ValueError("la muestra no es un objeto JSON")
+            writer.write(record, client_ip)
+            print(
+                f"[RECIBIDO] {client_ip} | "
+                f"CPU {record.get('system_cpu_percent', '')}% | "
+                f"RAM {record.get('system_memory_percent', '')}% | "
+                f"muestras almacenadas: {writer.count}"
+            )
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
+            print(f"[AVISO] Muestra ignorada desde {client_ip}: {error}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -116,12 +115,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--host",
         default="0.0.0.0",
         help="Interfaz de escucha (por defecto: 0.0.0.0).",
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=8765,
-        help="Puerto TCP de escucha (por defecto: 8765).",
     )
     parser.add_argument(
         "--output",
@@ -140,17 +133,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
-    if not 1 <= args.port <= 65535:
-        raise SystemExit("--port debe estar entre 1 y 65535.")
-
     stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
     csv_path = args.output or Path(__file__).resolve().parent / "results" / f"station_performance_{stamp}.csv"
     jsonl_path = args.jsonl_output or csv_path.with_suffix(".jsonl")
     writer = RecordWriter(csv_path, jsonl_path)
-    server = ThreadedTCPServer((args.host, args.port), PerformanceHandler)
+    server = ThreadedUDPServer((args.host, MONITORING_PORT), PerformanceHandler)
     server.writer = writer  # type: ignore[attr-defined]
 
-    print(f"[INFO] Estación escuchando en {args.host}:{args.port}")
+    print(f"[INFO] Estación escuchando por UDP en {args.host}:{MONITORING_PORT}")
     print(f"[INFO] CSV:   {csv_path}")
     print(f"[INFO] JSONL: {jsonl_path}")
     print("[INFO] Ctrl+C para detener la recepción.")

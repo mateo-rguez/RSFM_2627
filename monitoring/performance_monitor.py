@@ -16,7 +16,7 @@ Ejemplos desde la raíz del proyecto:
         --sensor-pattern collector.py --camera-pattern video_sender.py
 
 Las muestras se guardan en CSV y el resumen estadístico en JSON. Con
-``--station-host`` también se envía cada muestra por TCP a la estación. La
+``--station-host`` también se envía cada muestra por UDP a la estación. La
 única dependencia externa es ``psutil`` (``python3 -m pip install psutil``).
 """
 
@@ -50,55 +50,31 @@ DEFAULT_SENSOR_PATTERNS = (
     "barco/datos_reales/main.py",
 )
 DEFAULT_CAMERA_PATTERNS = ("video_sender.py", "video_receiver.py")
+MONITORING_PORT = 8765
 
 
 class StationClient:
-    """Envía muestras a la estación y se reconecta si el receptor reaparece."""
+    """Envía muestras JSON a la estación mediante datagramas UDP."""
 
-    def __init__(self, host: str, port: int) -> None:
+    def __init__(self, host: str) -> None:
         self.host = host
-        self.port = port
-        self.connection: socket.socket | None = None
-        self.next_retry = 0.0
-
-    def _connect(self) -> bool:
-        if time.monotonic() < self.next_retry:
-            return False
-        try:
-            self.connection = socket.create_connection((self.host, self.port), timeout=3)
-            self.next_retry = 0.0
-            return True
-        except OSError as error:
-            self.connection = None
-            self.next_retry = time.monotonic() + 5.0
-            print(f"[AVISO] No se puede conectar con la estación {self.host}:{self.port}: {error}")
-            return False
+        self.address = (host, MONITORING_PORT)
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
     def send(self, record: dict[str, Any]) -> None:
         payload = (
             json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n"
         ).encode("utf-8")
-        for attempt in range(2):
-            if self.connection is None and not self._connect():
-                return
-            try:
-                assert self.connection is not None
-                self.connection.sendall(payload)
-                return
-            except OSError as error:
-                print(f"[AVISO] Conexión con la estación perdida: {error}")
-                self.close()
-                if attempt == 0:
-                    continue
-                return
+        try:
+            self.socket.sendto(payload, self.address)
+        except OSError as error:
+            print(f"[AVISO] No se puede enviar a la estación {self.host}:{MONITORING_PORT}: {error}")
 
     def close(self) -> None:
-        if self.connection is not None:
-            try:
-                self.connection.close()
-            except OSError:
-                pass
-            self.connection = None
+        try:
+            self.socket.close()
+        except OSError:
+            pass
 
 
 def _require_psutil() -> None:
@@ -279,12 +255,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--station-host",
         help="IP o nombre de host de la estación que recibirá las muestras.",
     )
-    parser.add_argument(
-        "--station-port",
-        type=int,
-        default=8765,
-        help="Puerto TCP de la estación (por defecto: 8765).",
-    )
     return parser
 
 
@@ -297,6 +267,67 @@ def _csv_value(value: Any) -> Any:
     return "" if value is None else value
 
 
+def _format_metric(name: str, values: dict[str, float | None], unit: str = "") -> str:
+    def value(key: str) -> str:
+        item = values.get(key)
+        return "n/d" if item is None else f"{item:.2f}{unit}"
+
+    return (
+        f"{name}: media={value('mean')}, mínimo={value('min')}, "
+        f"máximo={value('max')}, p95={value('p95')}"
+    )
+
+
+def _write_text_report(
+    report_path: Path,
+    summary: dict[str, Any],
+    output: Path,
+    summary_path: Path,
+) -> None:
+    metrics = summary["metrics"]
+    lines = [
+        "INFORME DE PRESTACIONES DEL SISTEMA",
+        "=" * 40,
+        f"Generado: {summary['generated_at']}",
+        f"Duración: {summary['duration_s']} s",
+        f"Muestras registradas: {summary['samples']}",
+        f"Intervalo entre muestras: {summary['interval_s']} s",
+        "",
+        "RECURSOS DEL SISTEMA",
+        "---------------------",
+        _format_metric("CPU del sistema", metrics["system_cpu_percent"], "%"),
+        _format_metric("RAM utilizada", metrics["system_memory_percent"], "%"),
+        _format_metric("RAM utilizada", metrics["system_memory_used_mb"], " MB"),
+        _format_metric("Carga del sistema (1 min)", metrics["load_1m"]),
+        _format_metric("Temperatura máxima", metrics["temperature_max_c"], " °C"),
+        "",
+        "RED Y DISCO",
+        "------------",
+        _format_metric("Datos enviados", metrics["net_sent_mb"], " MB"),
+        _format_metric("Datos recibidos", metrics["net_recv_mb"], " MB"),
+        _format_metric("Lectura de disco", metrics["disk_read_mb"], " MB"),
+        _format_metric("Escritura de disco", metrics["disk_write_mb"], " MB"),
+        "",
+        "PROCESOS MONITORIZADOS",
+        "----------------------",
+        _format_metric("CPU de sensores", metrics["sensor_cpu_percent"], "%"),
+        _format_metric("RAM de sensores", metrics["sensor_rss_mb"], " MB"),
+        _format_metric("CPU de cámara", metrics["camera_cpu_percent"], "%"),
+        _format_metric("RAM de cámara", metrics["camera_rss_mb"], " MB"),
+        "",
+        "ÚLTIMOS PROCESOS DETECTADOS",
+        "----------------------------",
+        f"Sensores: {summary['last_detected_processes']['sensors'] or 'ninguno'}",
+        f"Cámara: {summary['last_detected_processes']['camera'] or 'ninguno'}",
+        "",
+        "ARCHIVOS DE DATOS",
+        "-----------------",
+        f"CSV: {output}",
+        f"JSON: {summary_path}",
+    ]
+    report_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def monitor(args: argparse.Namespace) -> tuple[Path, Path]:
     _require_psutil()
 
@@ -304,9 +335,6 @@ def monitor(args: argparse.Namespace) -> tuple[Path, Path]:
         raise SystemExit("--duration debe ser mayor que cero.")
     if args.interval <= 0:
         raise SystemExit("--interval debe ser mayor que cero.")
-    if not 1 <= args.station_port <= 65535:
-        raise SystemExit("--station-port debe estar entre 1 y 65535.")
-
     sensor_patterns = [] if args.no_auto_discover else list(DEFAULT_SENSOR_PATTERNS)
     camera_patterns = [] if args.no_auto_discover else list(DEFAULT_CAMERA_PATTERNS)
     if args.sensor_pattern is not None:
@@ -317,6 +345,7 @@ def monitor(args: argparse.Namespace) -> tuple[Path, Path]:
     output = args.output or _default_output()
     output.parent.mkdir(parents=True, exist_ok=True)
     summary_path = output.with_name(f"{output.stem}_summary.json")
+    report_path = output.with_name(f"{output.stem}_report.txt")
 
     sensors = find_processes(args.sensor_pid, sensor_patterns)
     cameras = find_processes(args.camera_pid, camera_patterns)
@@ -360,7 +389,7 @@ def monitor(args: argparse.Namespace) -> tuple[Path, Path]:
     ]
     records: list[dict[str, Any]] = []
     station_client = (
-        StationClient(args.station_host, args.station_port)
+        StationClient(args.station_host)
         if args.station_host
         else None
     )
@@ -378,7 +407,7 @@ def monitor(args: argparse.Namespace) -> tuple[Path, Path]:
         f"(muestras cada {args.interval:.2f} s). Ctrl+C para finalizar."
     )
     if station_client:
-        print(f"[INFO] Envío de muestras a {args.station_host}:{args.station_port}")
+        print(f"[INFO] Envío UDP de muestras a {args.station_host}:{MONITORING_PORT}")
 
     try:
         with output.open("w", newline="", encoding="utf-8") as csv_file:
@@ -458,7 +487,12 @@ def monitor(args: argparse.Namespace) -> tuple[Path, Path]:
             "system_cpu_percent": _number_summary(values("system_cpu_percent")),
             "system_memory_percent": _number_summary(values("system_memory_percent")),
             "system_memory_used_mb": _number_summary(values("system_memory_used_mb")),
+            "load_1m": _number_summary(values("load_1m")),
             "temperature_max_c": _number_summary(values("temperature_max_c")),
+            "net_sent_mb": _number_summary(values("net_sent_mb")),
+            "net_recv_mb": _number_summary(values("net_recv_mb")),
+            "disk_read_mb": _number_summary(values("disk_read_mb")),
+            "disk_write_mb": _number_summary(values("disk_write_mb")),
             "sensor_cpu_percent": _number_summary(values("sensor_cpu_percent")),
             "sensor_rss_mb": _number_summary(values("sensor_rss_mb")),
             "camera_cpu_percent": _number_summary(values("camera_cpu_percent")),
@@ -470,9 +504,11 @@ def monitor(args: argparse.Namespace) -> tuple[Path, Path]:
         },
     }
     summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+    _write_text_report(report_path, summary, output, summary_path)
 
     print(f"[INFO] Muestras guardadas en: {output}")
     print(f"[INFO] Resumen guardado en:    {summary_path}")
+    print(f"[INFO] Informe de texto guardado en: {report_path}")
     return output, summary_path
 
 
