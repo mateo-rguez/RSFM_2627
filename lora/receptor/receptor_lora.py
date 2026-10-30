@@ -9,8 +9,8 @@ BROKER_TTN = "eu1.cloud.thethings.network"
 BROKER_PORT = 1883
 
 # Credenciales proporcionadas por tu consola de TTN
-APP_ID = "tu-application-id-aqui"       # Tu Application ID en TTN
-API_KEY = "NNSXS.XXXXXXXXXXXXXXXXXXXXXXXX" # Tu API Key con permisos de lectura (Link)
+APP_ID = "telemetria-titanic"       # Tu Application ID en TTN
+API_KEY = "NNSXS.5QGTW4EOCEQWANKZT743OPLPWLEWNIPIGQAS2XI.VPNYHOL7NDVQFILTGQF3MLYUHJSEKIAPKCZ5EP5M3RZLKYW6AWWA" # Tu API Key con permisos de lectura (Link)
 
 # Tópico estándar de TTN para escuchar los uplink (mensajes del dispositivo) de toda la aplicación
 TOPIC_SUSCRIPCION = f"v3/{APP_ID}/devices/+/up"
