@@ -1,11 +1,8 @@
 import time
 import random
 import struct
+import serial
 from collector import TelemetryCollector
-
-# NOTA: Dependiendo de tu hardware LoRa (por ejemplo, un módulo conectado por UART con comandos AT 
-# o una librería SPI como CircuitPython/LMIC), la función de envío real variará. 
-# Aquí simulamos la interfaz de transmisión LoRaWAN.
 
 INTERVALO_ENVIO_S = 10.0  # En LoRaWAN se espacian más los envíos por el duty cycle (ej. cada 10s o 30s)
 
@@ -23,15 +20,32 @@ def empaquetar_datos(paquete):
     # '!ffff' = Network byte order, 4 floats (4 bytes cada uno = 16 bytes totales)
     return struct.pack('!ffff', altitud, ax, ay, az)
 
+# Configurar el puerto serie según cómo lo tengas conectado a la Pi:
+# - Por cable USB: normalmente '/dev/ttyUSB0' o '/dev/ttyACM0'
+# - Por pines GPIO RX/TX: '/dev/ttyS0' o '/dev/ttyAMA0'
+PUERTO_SERIE_LORA = '/dev/ttyUSB0'
+BAUDRATE = 115200
+
 def enviar_por_lorawan(payload_bytes):
     """
-    Función que interactúa con tu módulo LoRa para transmitir los bytes.
-    Aquí iría la llamada a tu librería de hardware (ej. puerto serie AT commands o SPI).
+    Envía la carga útil en hex al módulo Heltec CubeCell mediante comandos AT por puerto serie.
     """
-    # SIMULACIÓN DE ENVÍO LORA:
-    print(f"[LORA TRANSMISIÓN] Enviando {len(payload_bytes)} bytes al aire...")
-    # Ejemplo real con módulo UART/AT: serial_port.write(b"AT+CMSGHEX=" + payload_bytes.hex().encode() + b"\r\n")
-
+    hex_payload = payload_bytes.hex().upper()
+    print(f"[LORA] Preparando envío de {len(payload_bytes)} bytes: {hex_payload}")
+    
+    try:
+        with serial.Serial(PUERTO_SERIE_LORA, BAUDRATE, timeout=2) as ser:
+            # Comando AT estándar de Heltec CubeCell para enviar datos (fport=1, unconfirmed)
+            comando = f"AT+SendHex={hex_payload}\r\n"
+            ser.write(comando.encode('utf-8'))
+            
+            # Leer respuesta del módulo
+            respuesta = ser.read_until(b'\r\n').decode('utf-8', errors='ignore').strip()
+            print(f"[LORA RESPUESTA] {respuesta}")
+            
+    except Exception as e:
+        print(f"[ERROR LORA] Fallo al comunicarse con el módulo Heltec: {e}")
+        
 def iniciar_emisor_lora():
     colector = TelemetryCollector()
     print("[EMISOR LORA] Iniciando sistema de telemetría marítima vía LoRaWAN...")
