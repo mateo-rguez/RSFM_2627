@@ -31,14 +31,19 @@ class AltitudeSensor:
             distance_cm = round(random.uniform(20.0, 50.0), 2)
             is_valid = True
 
-        elif raw_distance_cm is None:
-            return{
-                "distance_cm": None,
-                "altitude_m": None,
-                "valid": False
-            } 
         else:
-            distance_cm = round(float(raw_distance_cm), 3)
+            try:
+                distance_cm = round(float(raw_distance_cm), 3)
+            except (TypeError, ValueError):
+                # Sin dato o con un valor no numérico: el sensor queda como no
+                # disponible, sin detener el envío del resto de la telemetría
+                return {
+                    "distance_cm": None,
+                    "altitude_m": None,
+                    "valid": False,
+                    "simulated": False
+                }
+
             # Validación según criterios DoD: rango técnico operativo
             is_valid = (MIN_VALID_DISTANCE_CM <= distance_cm <= MAX_VALID_DISTANCE_CM)
 
@@ -47,5 +52,6 @@ class AltitudeSensor:
         return {
             "distance_cm": distance_cm,
             "altitude_m": altitude_m,
-            "valid": is_valid
+            "valid": is_valid,
+            "simulated": self.simulated     # Permite a la estación saber si el dato es real
         }

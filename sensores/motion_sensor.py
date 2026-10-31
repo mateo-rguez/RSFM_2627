@@ -29,8 +29,10 @@ class MotionSensor:
 
         :param raw_accel: Diccionario con claves 'x', 'y', 'z' de aceleración real.
         :param raw_gyro: Diccionario con claves 'x', 'y', 'z' de velocidad angular real.
-        :return: Diccionario con vectores y flag booleano de validez.
+        :return: Diccionario con vectores, flags booleanos de validez y origen de los datos.
         """
+        gyro_valid = True
+
         if self.simulated:
             # Simulación: Barco en reposo con suave oleaje
             ax = round(random.uniform(-0.1, 0.1), 3)
@@ -39,26 +41,39 @@ class MotionSensor:
             gx = round(random.uniform(-0.02, 0.02), 3)
             gy = round(random.uniform(-0.02, 0.02), 3)
             gz = round(random.uniform(-0.02, 0.02), 3)
-        elif raw_accel is None:
-            return {
-                "accel": {"x": None, "y": None, "z": None},
-                "gyro": {"x": None, "y": None, "z": None},
-                "valid": False
-            }
         else:
-            ax = float(raw_accel.get("x", 0.0)) * GRAVITY_NOMINAL
-            ay = float(raw_accel.get("y", 0.0)) * GRAVITY_NOMINAL
-            az = float(raw_accel.get("z", 1.0)) * GRAVITY_NOMINAL
-            gx = float(raw_gyro.get("x", 0.0)) if raw_gyro else 0.0
-            gy = float(raw_gyro.get("y", 0.0)) if raw_gyro else 0.0
-            gz = float(raw_gyro.get("z", 0.0)) if raw_gyro else 0.0
+            # Un eje ausente o no numérico invalida la lectura: no se rellena con
+            # valores por defecto porque parecerían medidas reales
+            try:
+                ax = float(raw_accel["x"]) * GRAVITY_NOMINAL
+                ay = float(raw_accel["y"]) * GRAVITY_NOMINAL
+                az = float(raw_accel["z"]) * GRAVITY_NOMINAL
+            except (KeyError, TypeError, ValueError):
+                return {
+                    "accel": {"x": None, "y": None, "z": None},
+                    "gyro": {"x": None, "y": None, "z": None},
+                    "valid": False,
+                    "gyro_valid": False,
+                    "simulated": False
+                }
+
+            # El giroscopio se valida aparte para conservar la aceleración si solo falla él
+            try:
+                gx = float(raw_gyro["x"])
+                gy = float(raw_gyro["y"])
+                gz = float(raw_gyro["z"])
+            except (KeyError, TypeError, ValueError):
+                gx = gy = gz = None
+                gyro_valid = False
 
         # Validación DoD: La magnitud del vector aceleración debe ser consistente con reposo/navegación
-        total_accel = math.sqrt(ax**2 + ay**2 + az**2)
+        total_accel = math.hypot(ax, ay, az)
         is_valid = (MIN_TOTAL_ACCEL <= total_accel <= MAX_TOTAL_ACCEL)
 
         return {
             "accel": {"x": ax, "y": ay, "z": az},
             "gyro": {"x": gx, "y": gy, "z": gz},
-            "valid": is_valid
+            "valid": is_valid,
+            "gyro_valid": gyro_valid,
+            "simulated": self.simulated     # Permite a la estación saber si el dato es real
         }

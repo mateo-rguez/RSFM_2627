@@ -51,12 +51,13 @@ class TelemetryCollector:
                 line = self.ser.readline().decode("utf-8", errors="ignore").strip()
 
                 if not line:
-                    return {}
+                    continue
 
-                # Ignorar mensajes informativos del Arduino
+                # Ignorar mensajes informativos del Arduino sin perder
+                # la trama válida que ya se haya leído antes que ellos
                 if not line.startswith("{"):
                     print(f"[ARDUINO] {line}")
-                    return {}
+                    continue
 
                 try:
                     data = json.loads(line)
@@ -87,8 +88,10 @@ class TelemetryCollector:
         raw_gyro = None
 
         if raw:
-            ultrasonic = raw.get("ultrasonic", {})
-            raw_dist = ultrasonic.get("distance_cm")
+            # Una trama mal formada solo debe invalidar su sensor, no detener el envío
+            ultrasonic = raw.get("ultrasonic")
+            if isinstance(ultrasonic, dict):
+                raw_dist = ultrasonic.get("distance_cm")
 
             raw_accel = raw.get("accel")
             raw_gyro = raw.get("gyro")
