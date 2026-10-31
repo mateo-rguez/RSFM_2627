@@ -14,12 +14,13 @@ INTERVALO_MAX_S = 1.5        # tiempo máximo entre dos envíos
 def enviar_telemetria():
     # Conexión con el broker MQTT
     cliente = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+    cliente.reconnect_delay_set(min_delay=1, max_delay=10)
     print("[MQTT] Conectando con el broker...")
-    try:
-        cliente.connect(BROKER_IP, BROKER_PORT)
-    except OSError as e:
-        print(f"[ERROR] No se pudo conectar con el broker en {BROKER_IP}:{BROKER_PORT}: {e}")
-        return
+
+    # connect_async() en lugar de connect(): con connect() el emisor terminaba si el
+    # broker aún no estaba disponible, por ejemplo si el barco arranca antes que la
+    # estación. Así el hilo de loop_start() sigue reintentando hasta conseguir conectar
+    cliente.connect_async(BROKER_IP, BROKER_PORT)
     cliente.loop_start()    # hilo en segundo plano que gestiona la comunicación (y reconecta si se corta)
 
     # Lectura de sensores (si no hay hardware conectado, el colector genera datos simulados)
@@ -31,8 +32,15 @@ def enviar_telemetria():
             # Leer los sensores y publicar el paquete en MQTT
             paquete = colector.collect()
             data_str = json.dumps(paquete)
-            cliente.publish(TOPIC, data_str, qos=QOS)
-            print(f"[EMISOR] Publicado en '{TOPIC}': {data_str}")
+
+            # Sin conexión, paho guardaría los paquetes QoS 1 en memoria y los enviaría
+            # todos de golpe al reconectar. Como la telemetría es en tiempo real, se
+            # descartan: la estación recibirá solo datos actuales al recuperar la conexión
+            if cliente.is_connected():
+                cliente.publish(TOPIC, data_str, qos=QOS)
+                print(f"[EMISOR] Publicado en '{TOPIC}': {data_str}")
+            else:
+                print("[WARN] Sin conexión con el broker. Paquete descartado.")
 
             # Esperar un tiempo aleatorio hasta el siguiente envío
             time.sleep(random.uniform(INTERVALO_MIN_S, INTERVALO_MAX_S))
