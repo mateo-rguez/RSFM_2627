@@ -1,4 +1,4 @@
-from comunicacion import (
+from Antiguo.barco.comunicacion import (
     conectar_estacion,
     enviar_fichero,
     cerrar_conexion

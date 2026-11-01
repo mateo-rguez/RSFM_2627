@@ -9,12 +9,12 @@ from cyclonedds.topic import Topic
 from cyclonedds.sub import DataReader
 from cyclonedds.qos import Qos, Policy
 
-from DDS.telemetry_types import (
+from Antiguo.DDS.telemetry_types import (
     AltitudeData,
     AccelerometerData,
     GyroscopeData,
 )
-from DDS.estacion.graficas import graficar_datos
+from Antiguo.DDS.estacion.graficas import graficar_datos
 
 
 datos_recibidos = []

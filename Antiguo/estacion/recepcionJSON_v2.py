@@ -105,7 +105,7 @@ if __name__ == "__main__":
     hilo.start()
 
     try:
-        from graficas import graficar_datos
+        from Antiguo.estacion.graficas import graficar_datos
         graficar_datos(datos_recibidos, datos_lock)
 
     except KeyboardInterrupt:

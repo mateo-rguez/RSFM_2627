@@ -7,8 +7,8 @@ y lo almacena en un archivo local (datos.txt).
 
 import time
 import json
-from DDS.barco.altitude_sensor import AltitudeSensor
-from DDS.barco.motion_sensor import MotionSensor
+from Antiguo.DDS.barco.altitude_sensor import AltitudeSensor
+from Antiguo.DDS.barco.motion_sensor import MotionSensor
 
 try:
     import serial

@@ -5,7 +5,7 @@ from cyclonedds.topic import Topic
 from cyclonedds.pub import DataWriter
 from cyclonedds.qos import Qos, Policy
 
-from DDS.telemetry_types import (
+from Antiguo.DDS.telemetry_types import (
     AltitudeData,
     AccelerometerData,
     GyroscopeData,

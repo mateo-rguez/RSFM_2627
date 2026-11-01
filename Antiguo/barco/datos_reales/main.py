@@ -1,11 +1,11 @@
 import time
 import json
-from comunicacion import (
+from Antiguo.barco.datos_reales.comunicacion import (
     conectar_estacion,
     enviar_fichero,
     cerrar_conexion
 )
-from collector import TelemetryCollector
+from Antiguo.barco.datos_reales.collector import TelemetryCollector
 
 # Para ejecutar desde la carpeta barco: python3 main.py. Desde la raíz del proyecto se debe usar la siguiente línea de código:
 # python3 -m barco.main

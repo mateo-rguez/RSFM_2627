@@ -1,7 +1,7 @@
 import time
 
-from DDS.barco.collector import TelemetryCollector
-from DDS.dds_publisher import TelemetryPublisher
+from Antiguo.DDS.barco.collector import TelemetryCollector
+from Antiguo.DDS.dds_publisher import TelemetryPublisher
 
 
 PERIOD = 1.0
