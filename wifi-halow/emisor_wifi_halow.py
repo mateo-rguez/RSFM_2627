@@ -27,14 +27,14 @@ from collector_Halow import TelemetryCollector
 
 # IP fija del broker MQTT en la estación de control.
 # Cámbiala aquí si cambia la dirección de la estación.
-DEFAULT_BROKER = "10.42.0.1"
+DEFAULT_BROKER = "192.168.200.1"
 DEFAULT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 DEFAULT_TOPIC = os.getenv(
     "MQTT_TOPIC",
     "wifi-halow/telemetria"
 )
 DEFAULT_INTERVAL = float(os.getenv("MQTT_INTERVAL", "1.0"))
-DEFAULT_VIDEO_IP = os.getenv("VIDEO_SERVER_IP", "10.42.0.1")
+DEFAULT_VIDEO_IP = os.getenv("VIDEO_SERVER_IP", "192.168.200.1")
 DEFAULT_VIDEO_PORT = int(os.getenv("VIDEO_SERVER_PORT", "5005"))
 DEFAULT_VIDEO_CAMERA = int(os.getenv("VIDEO_CAMERA", "0"))
 DEFAULT_VIDEO_WIDTH = int(os.getenv("VIDEO_WIDTH", "640"))

@@ -17,7 +17,7 @@ except ImportError:
     cv2 = None
 
 # Configuración de red y resolución según requisitos del proyecto
-SERVER_IP = "10.42.0.1"     # Cambiar por la IP de la estación de control
+SERVER_IP = "192.168.200.1"     # Cambiar por la IP de la estación de control
 SERVER_PORT = 5005
 FRAME_WIDTH = 640           # Resolución base 480p (640x480)
 FRAME_HEIGHT = 480          # Resolución base 480p (640x480)
