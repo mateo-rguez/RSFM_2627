@@ -4,6 +4,7 @@
 import argparse
 import json
 import os
+import queue
 import threading
 from pathlib import Path
 
@@ -16,6 +17,10 @@ DEFAULT_TOPIC = os.getenv("MQTT_TOPIC", "wifi-halow/telemetria")
 DEFAULT_OUTPUT = Path(__file__).resolve().with_name(
     "telemetria_recibida.jsonl"
 )
+DEFAULT_VIDEO_IP = os.getenv("VIDEO_LISTEN_IP", "0.0.0.0")
+DEFAULT_VIDEO_PORT = int(os.getenv("VIDEO_SERVER_PORT", "5005"))
+DEFAULT_VIDEO_TOPIC = os.getenv("MQTT_VIDEO_TOPIC", "wifi-halow/video")
+DEFAULT_VIDEO_MQTT_QOS = int(os.getenv("MQTT_VIDEO_QOS", "0"))
 
 
 def build_parser():
@@ -30,6 +35,51 @@ def build_parser():
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
 
     parser.add_argument(
+        "--no-video",
+        action="store_true",
+        help="No iniciar la recepción de vídeo."
+    )
+
+    parser.add_argument(
+        "--video-ip",
+        default=DEFAULT_VIDEO_IP,
+        help="Interfaz local donde escuchar el vídeo UDP."
+    )
+
+    parser.add_argument(
+        "--video-port",
+        type=int,
+        default=DEFAULT_VIDEO_PORT,
+        help="Puerto UDP del vídeo (por defecto: 5005)."
+    )
+
+    parser.add_argument(
+        "--no-video-window",
+        action="store_true",
+        help="Recibir vídeo sin abrir una ventana de OpenCV."
+    )
+
+    parser.add_argument(
+        "--video-topic",
+        default=DEFAULT_VIDEO_TOPIC,
+        help="Topic MQTT de los fotogramas de vídeo."
+    )
+
+    parser.add_argument(
+        "--video-mqtt-qos",
+        type=int,
+        choices=(0, 1, 2),
+        default=DEFAULT_VIDEO_MQTT_QOS,
+        help="QoS MQTT del vídeo; debe coincidir con el emisor."
+    )
+
+    parser.add_argument(
+        "--no-video-mqtt",
+        action="store_true",
+        help="Recibir vídeo solo por UDP, sin suscribirse a MQTT."
+    )
+
+    parser.add_argument(
         "--username",
         default=os.getenv("MQTT_USERNAME")
     )
@@ -42,6 +92,27 @@ def build_parser():
     return parser
 
 
+def cargar_receptor_video():
+    """Carga el receptor de vídeo sin hacer obligatoria su dependencia."""
+    try:
+        from video_receiver_Halow import run_receiver, cv2, np
+    except ImportError as error:
+        print(
+            "[ERROR] No se puede iniciar el vídeo. Instale OpenCV y NumPy: {}".format(
+                error
+            )
+        )
+        return None
+
+    if cv2 is None or np is None:
+        print(
+            "[ERROR] No se puede iniciar el vídeo. Instale opencv-python y numpy."
+        )
+        return None
+
+    return run_receiver
+
+
 def main():
     args = build_parser().parse_args()
 
@@ -51,6 +122,12 @@ def main():
 
     # API compatible con Paho MQTT 1.x
     cliente = mqtt.Client()
+
+    video_queue = None
+    if not args.no_video and not args.no_video_mqtt:
+        # Solo se conserva el último fotograma: si OpenCV tarda, no se forma
+        # una cola creciente de imágenes antiguas.
+        video_queue = queue.Queue(maxsize=1)
 
     if args.username is not None:
         cliente.username_pw_set(args.username, args.password)
@@ -62,13 +139,48 @@ def main():
 
         client.subscribe(args.topic, qos=args.qos)
 
-        print(
-            "[MQTT] Suscrito a '{}'. Esperando datos...".format(
-                args.topic
+        if video_queue is not None:
+            client.subscribe(
+                args.video_topic,
+                qos=args.video_mqtt_qos
             )
-        )
+
+        if video_queue is None:
+            print(
+                "[MQTT] Suscrito a '{}'. Esperando datos...".format(
+                    args.topic
+                )
+            )
+        else:
+            print(
+                "[MQTT] Suscrito a telemetría '{}' y vídeo '{}'.".format(
+                    args.topic,
+                    args.video_topic
+                )
+            )
 
     def on_message(client, userdata, mensaje):
+        if video_queue is not None and mensaje.topic == args.video_topic:
+            payload = mensaje.payload
+            if len(payload) <= 8:
+                print("[WARN] Fotograma MQTT demasiado pequeño; descartado.")
+                return
+
+            try:
+                video_queue.put_nowait(payload)
+            except queue.Full:
+                # Reemplaza el fotograma anterior por el más reciente.
+                try:
+                    video_queue.get_nowait()
+                except queue.Empty:
+                    pass
+
+                try:
+                    video_queue.put_nowait(payload)
+                except queue.Full:
+                    pass
+            return
+
         try:
             paquete = json.loads(
                 mensaje.payload.decode("utf-8")
@@ -136,13 +248,37 @@ def main():
         )
     )
 
+    mqtt_loop_started = False
+
     try:
-        cliente.loop_forever()
+        video_receiver = None
+        if not args.no_video:
+            video_receiver = cargar_receptor_video()
+
+        if video_receiver is None:
+            # Sin vídeo, el bucle MQTT puede ejecutarse en el hilo principal.
+            cliente.loop_forever()
+        else:
+            # OpenCV/HighGUI funciona de forma más fiable en el hilo principal.
+            # MQTT queda atendido en segundo plano mientras se recibe el vídeo.
+            cliente.loop_start()
+            mqtt_loop_started = True
+            video_receiver(
+                listen_ip=args.video_ip,
+                listen_port=args.video_port,
+                show_window=not args.no_video_window,
+                mqtt_frame_queue=video_queue
+            )
 
     except KeyboardInterrupt:
         print("\n[RECEPTOR] Deteniendo la recepción...")
 
+    except Exception as error:
+        print("[ERROR] Fallo en el receptor de vídeo: {}".format(error))
+
     finally:
+        if mqtt_loop_started:
+            cliente.loop_stop()
         cliente.disconnect()
         print("[MQTT] Conexión cerrada.")
 

@@ -8,6 +8,7 @@ import argparse
 import json
 import os
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -24,13 +25,24 @@ sys.path.insert(0, str(SENSORS_DIR))
 from collector_Halow import TelemetryCollector
 
 
-DEFAULT_BROKER = os.getenv("MQTT_BROKER", "192.168.200.1")
+# IP fija del broker MQTT en la estación de control.
+# Cámbiala aquí si cambia la dirección de la estación.
+DEFAULT_BROKER = "10.42.0.1"
 DEFAULT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 DEFAULT_TOPIC = os.getenv(
     "MQTT_TOPIC",
     "wifi-halow/telemetria"
 )
 DEFAULT_INTERVAL = float(os.getenv("MQTT_INTERVAL", "1.0"))
+DEFAULT_VIDEO_IP = os.getenv("VIDEO_SERVER_IP", "10.42.0.1")
+DEFAULT_VIDEO_PORT = int(os.getenv("VIDEO_SERVER_PORT", "5005"))
+DEFAULT_VIDEO_CAMERA = int(os.getenv("VIDEO_CAMERA", "0"))
+DEFAULT_VIDEO_WIDTH = int(os.getenv("VIDEO_WIDTH", "640"))
+DEFAULT_VIDEO_HEIGHT = int(os.getenv("VIDEO_HEIGHT", "480"))
+DEFAULT_VIDEO_FPS = float(os.getenv("VIDEO_FPS", "30"))
+DEFAULT_VIDEO_QUALITY = int(os.getenv("VIDEO_JPEG_QUALITY", "50"))
+DEFAULT_VIDEO_TOPIC = os.getenv("MQTT_VIDEO_TOPIC", "wifi-halow/video")
+DEFAULT_VIDEO_MQTT_QOS = int(os.getenv("MQTT_VIDEO_QOS", "0"))
 
 
 def build_parser():
@@ -97,7 +109,122 @@ def build_parser():
         default=1
     )
 
+    parser.add_argument(
+        "--no-video",
+        action="store_true",
+        help="No iniciar la transmisión de vídeo."
+    )
+
+    parser.add_argument(
+        "--video-ip",
+        default=DEFAULT_VIDEO_IP,
+        help="IP de la estación para el vídeo UDP."
+    )
+
+    parser.add_argument(
+        "--video-port",
+        type=int,
+        default=DEFAULT_VIDEO_PORT,
+        help="Puerto UDP del vídeo (por defecto: 5005)."
+    )
+
+    parser.add_argument(
+        "--camera",
+        type=int,
+        default=DEFAULT_VIDEO_CAMERA,
+        help="Índice de la cámara (por defecto: 0)."
+    )
+
+    parser.add_argument(
+        "--video-width",
+        type=int,
+        default=DEFAULT_VIDEO_WIDTH
+    )
+
+    parser.add_argument(
+        "--video-height",
+        type=int,
+        default=DEFAULT_VIDEO_HEIGHT
+    )
+
+    parser.add_argument(
+        "--video-fps",
+        type=float,
+        default=DEFAULT_VIDEO_FPS
+    )
+
+    parser.add_argument(
+        "--video-quality",
+        type=int,
+        default=DEFAULT_VIDEO_QUALITY,
+        help="Calidad JPEG entre 1 y 100."
+    )
+
+    parser.add_argument(
+        "--video-topic",
+        default=DEFAULT_VIDEO_TOPIC,
+        help="Topic MQTT para los fotogramas de vídeo."
+    )
+
+    parser.add_argument(
+        "--video-mqtt-qos",
+        type=int,
+        choices=(0, 1, 2),
+        default=DEFAULT_VIDEO_MQTT_QOS,
+        help="QoS MQTT del vídeo; se recomienda 0."
+    )
+
+    parser.add_argument(
+        "--no-video-mqtt",
+        action="store_true",
+        help="Enviar vídeo solo por UDP, sin publicarlo en MQTT."
+    )
+
     return parser
+
+
+def iniciar_video(args, mqtt_client):
+    """Arranca el transmisor UDP en segundo plano y devuelve su control."""
+    try:
+        from video_sender_Halow import run_sender, cv2
+    except ImportError as error:
+        print(
+            "[ERROR] No se puede iniciar el vídeo. Instale OpenCV: {}".format(
+                error
+            )
+        )
+        return None, None
+
+    if cv2 is None:
+        print(
+            "[ERROR] No se puede iniciar el vídeo. Instale opencv-python."
+        )
+        return None, None
+
+    stop_event = threading.Event()
+
+    def worker():
+        try:
+            run_sender(
+                stop_event=stop_event,
+                server_ip=args.video_ip,
+                server_port=args.video_port,
+                camera_index=args.camera,
+                frame_width=args.video_width,
+                frame_height=args.video_height,
+                target_fps=args.video_fps,
+                jpeg_quality=args.video_quality,
+                mqtt_client=None if args.no_video_mqtt else mqtt_client,
+                mqtt_topic=None if args.no_video_mqtt else args.video_topic,
+                mqtt_qos=args.video_mqtt_qos
+            )
+        except Exception as error:
+            print("[ERROR] Fallo en el transmisor de vídeo: {}".format(error))
+
+    thread = threading.Thread(target=worker, name="video-sender")
+    thread.daemon = True
+    thread.start()
+    return stop_event, thread
 
 
 def main():
@@ -108,6 +235,12 @@ def main():
         raise SystemExit(
             "--interval debe ser mayor que cero."
         )
+
+    if args.video_fps <= 0:
+        raise SystemExit("--video-fps debe ser mayor que cero.")
+
+    if not 1 <= args.video_quality <= 100:
+        raise SystemExit("--video-quality debe estar entre 1 y 100.")
 
     # Cliente compatible con Paho MQTT 1.x
     cliente = mqtt.Client()
@@ -143,6 +276,8 @@ def main():
         return 1
 
     colector = None
+    video_stop_event = None
+    video_thread = None
 
     try:
 
@@ -154,6 +289,9 @@ def main():
 
         # Inicia el bucle MQTT en segundo plano
         cliente.loop_start()
+
+        if not args.no_video:
+            video_stop_event, video_thread = iniciar_video(args, cliente)
 
         print(
             "[WIFI-HALOW] Publicando en '{}' cada {:.2f} s.".format(
@@ -218,6 +356,12 @@ def main():
 
         if colector is not None:
             colector.close()
+
+        if video_stop_event is not None:
+            video_stop_event.set()
+
+        if video_thread is not None:
+            video_thread.join(2.0)
 
         cliente.loop_stop()
         cliente.disconnect()

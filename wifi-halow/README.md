@@ -3,6 +3,8 @@ WIFI HaLow + MQTT
 
 Esta carpeta contiene un emisor y un receptor de telemetría para enviar los
 datos de los sensores del barco a través de MQTT sobre una red Wi-Fi HaLow.
+Además, los mismos programas pueden transmitir y recibir el vídeo de la
+cámara mediante UDP y MQTT.
 
 Wi-Fi HaLow no es el protocolo de mensajes de estos programas. Su función es
 proporcionar la conectividad IP entre el barco y la estación. MQTT se encarga
@@ -26,6 +28,9 @@ Flujo de comunicación
             v
     telemetria_recibida.jsonl
 
+    Cámara del barco --UDP--> receptor de vídeo en la estación
+                    \--MQTT--> topic wifi-halow/video
+
 Archivos
 --------
 
@@ -37,6 +42,10 @@ receptor_wifi_halow.py
     Se suscribe al mismo topic MQTT, muestra las muestras recibidas y las
     guarda una por línea en telemetria_recibida.jsonl.
 
+video_sender_Halow.py / video_receiver_Halow.py
+    Capturan, codifican y muestran vídeo. Comparten el paquete binario del
+    fotograma entre UDP y el topic MQTT de vídeo.
+
 Requisitos
 ----------
 
@@ -44,9 +53,16 @@ Instalar Paho MQTT y pyserial:
 
     python3 -m pip install paho-mqtt pyserial
 
-El receptor solo necesita paho-mqtt. El emisor usa pyserial si hay sensores
-conectados; si no encuentra la placa, el TelemetryCollector utiliza datos
-simulados.
+Para la transmisión de vídeo hay que instalar también OpenCV y NumPy:
+
+    python3 -m pip install opencv-python numpy
+
+El código de esta carpeta no utiliza f-strings ni sintaxis posterior a Python
+3.5. Las versiones de las dependencias deben ser compatibles con Python 3.5.
+
+Si se ejecuta con `--no-video`, el receptor solo necesita paho-mqtt. El
+emisor usa pyserial si hay sensores conectados; si no encuentra la placa, el
+TelemetryCollector utiliza datos simulados.
 
 Broker local con Mosquitto
 --------------------------
@@ -96,18 +112,35 @@ Terminal 3, emisor:
 
 Por defecto ambos programas usan:
 
-    Broker: 127.0.0.1
+    Broker del emisor: 10.42.0.1
+    Broker del receptor: 127.0.0.1
     Puerto: 1883
     Topic:  wifi-halow/telemetria
+
+Y el vídeo usa UDP en:
+
+    IP de destino del emisor: 10.42.0.1
+    Interfaz de escucha del receptor: 0.0.0.0
+    Puerto: 5005
+
+Además, el vídeo se publica y se recibe por MQTT en:
+
+    Topic: wifi-halow/video
+    QoS: 0
+
+El vídeo se inicia automáticamente junto con cada programa y se envía por los
+dos canales. El payload MQTT es binario: timestamp de 8 bytes seguido de los
+bytes JPEG; no se usa Base64. Si solo se quiere probar la telemetría, se puede
+desactivar con `--no-video` en ambos lados. Para conservar únicamente UDP se
+puede usar `--no-video-mqtt` en ambos lados.
 
 Ejecución entre barco y estación
 ---------------------------------
 
 Si el broker se ejecuta en la estación con IP 10.42.0.1, el emisor del barco
-debe conectarse a esa IP:
+se conecta a esa IP automáticamente:
 
     python3 wifi-halow/emisor_wifi_halow.py \
-        --broker 10.42.0.1 \
         --topic wifi-halow/telemetria
 
 El receptor se ejecuta en la estación y se conecta al broker local:
@@ -115,6 +148,39 @@ El receptor se ejecuta en la estación y se conecta al broker local:
     python3 wifi-halow/receptor_wifi_halow.py \
         --broker 127.0.0.1 \
         --topic wifi-halow/telemetria
+
+Para cambiar la dirección o el puerto del vídeo, ambos extremos deben usar el
+mismo puerto:
+
+    python3 wifi-halow/emisor_wifi_halow.py \
+        --video-ip 10.42.0.1 \
+        --video-port 5005
+
+    python3 wifi-halow/receptor_wifi_halow.py \
+        --broker 127.0.0.1 \
+        --video-port 5005
+
+La IP del broker que utiliza el emisor del barco está definida en la constante
+`DEFAULT_BROKER` de `emisor_wifi_halow.py`. Actualmente es `10.42.0.1`; si
+cambia la IP de la estación, se modifica directamente en esa línea.
+
+Opciones adicionales del emisor de vídeo:
+
+    --camera 0              Índice de la cámara
+    --video-width 640       Anchura de imagen
+    --video-height 480      Altura de imagen
+    --video-fps 30          Fotogramas por segundo
+    --video-quality 50      Calidad JPEG, entre 1 y 100
+    --video-topic ...       Topic MQTT del vídeo
+    --video-mqtt-qos 0      QoS MQTT del vídeo
+
+En una estación sin entorno gráfico se puede recibir el vídeo sin abrir una
+ventana con `--no-video-window`. El receptor seguirá validando y calculando
+las métricas de los fotogramas recibidos.
+
+MQTT es más pesado que UDP para vídeo porque cada fotograma atraviesa el
+broker. Para redes HaLow con poco ancho de banda se recomienda mantener QoS 0,
+bajar `--video-fps` o reducir `--video-quality`.
 
 Configuración del puerto serie
 ------------------------------
@@ -140,7 +206,7 @@ Usar autenticación MQTT sin escribir las credenciales en el código:
 
     export MQTT_USERNAME=usuario
     export MQTT_PASSWORD=contraseña
-    python3 wifi-halow/emisor_wifi_halow.py --broker 10.42.0.1
+    python3 wifi-halow/emisor_wifi_halow.py
 
 El receptor acepta las mismas variables de entorno. También se pueden pasar
 las opciones --username y --password directamente.
