@@ -17,8 +17,6 @@ DEFAULT_TOPIC = os.getenv("MQTT_TOPIC", "wifi-halow/telemetria")
 DEFAULT_OUTPUT = Path(__file__).resolve().with_name(
     "telemetria_recibida.jsonl"
 )
-DEFAULT_VIDEO_IP = os.getenv("VIDEO_LISTEN_IP", "0.0.0.0")
-DEFAULT_VIDEO_PORT = int(os.getenv("VIDEO_SERVER_PORT", "5005"))
 DEFAULT_VIDEO_TOPIC = os.getenv("MQTT_VIDEO_TOPIC", "wifi-halow/video")
 DEFAULT_VIDEO_MQTT_QOS = int(os.getenv("MQTT_VIDEO_QOS", "0"))
 
@@ -41,19 +39,6 @@ def build_parser():
     )
 
     parser.add_argument(
-        "--video-ip",
-        default=DEFAULT_VIDEO_IP,
-        help="Interfaz local donde escuchar el vídeo UDP."
-    )
-
-    parser.add_argument(
-        "--video-port",
-        type=int,
-        default=DEFAULT_VIDEO_PORT,
-        help="Puerto UDP del vídeo (por defecto: 5005)."
-    )
-
-    parser.add_argument(
         "--no-video-window",
         action="store_true",
         help="Recibir vídeo sin abrir una ventana de OpenCV."
@@ -71,12 +56,6 @@ def build_parser():
         choices=(0, 1, 2),
         default=DEFAULT_VIDEO_MQTT_QOS,
         help="QoS MQTT del vídeo; debe coincidir con el emisor."
-    )
-
-    parser.add_argument(
-        "--no-video-mqtt",
-        action="store_true",
-        help="Recibir vídeo solo por UDP, sin suscribirse a MQTT."
     )
 
     parser.add_argument(
@@ -124,7 +103,7 @@ def main():
     cliente = mqtt.Client()
 
     video_queue = None
-    if not args.no_video and not args.no_video_mqtt:
+    if not args.no_video:
         # Solo se conserva el último fotograma: si OpenCV tarda, no se forma
         # una cola creciente de imágenes antiguas.
         video_queue = queue.Queue(maxsize=1)
@@ -264,8 +243,6 @@ def main():
             cliente.loop_start()
             mqtt_loop_started = True
             video_receiver(
-                listen_ip=args.video_ip,
-                listen_port=args.video_port,
                 show_window=not args.no_video_window,
                 mqtt_frame_queue=video_queue
             )

@@ -34,8 +34,6 @@ DEFAULT_TOPIC = os.getenv(
     "wifi-halow/telemetria"
 )
 DEFAULT_INTERVAL = float(os.getenv("MQTT_INTERVAL", "1.0"))
-DEFAULT_VIDEO_IP = os.getenv("VIDEO_SERVER_IP", "192.168.200.1")
-DEFAULT_VIDEO_PORT = int(os.getenv("VIDEO_SERVER_PORT", "5005"))
 DEFAULT_VIDEO_CAMERA = int(os.getenv("VIDEO_CAMERA", "0"))
 DEFAULT_VIDEO_WIDTH = int(os.getenv("VIDEO_WIDTH", "640"))
 DEFAULT_VIDEO_HEIGHT = int(os.getenv("VIDEO_HEIGHT", "480"))
@@ -116,19 +114,6 @@ def build_parser():
     )
 
     parser.add_argument(
-        "--video-ip",
-        default=DEFAULT_VIDEO_IP,
-        help="IP de la estación para el vídeo UDP."
-    )
-
-    parser.add_argument(
-        "--video-port",
-        type=int,
-        default=DEFAULT_VIDEO_PORT,
-        help="Puerto UDP del vídeo (por defecto: 5005)."
-    )
-
-    parser.add_argument(
         "--camera",
         type=int,
         default=DEFAULT_VIDEO_CAMERA,
@@ -174,17 +159,11 @@ def build_parser():
         help="QoS MQTT del vídeo; se recomienda 0."
     )
 
-    parser.add_argument(
-        "--no-video-mqtt",
-        action="store_true",
-        help="Enviar vídeo solo por UDP, sin publicarlo en MQTT."
-    )
-
     return parser
 
 
 def iniciar_video(args, mqtt_client):
-    """Arranca el transmisor UDP en segundo plano y devuelve su control."""
+    """Arranca el transmisor MQTT en segundo plano."""
     try:
         from video_sender_Halow import run_sender, cv2
     except ImportError as error:
@@ -207,15 +186,13 @@ def iniciar_video(args, mqtt_client):
         try:
             run_sender(
                 stop_event=stop_event,
-                server_ip=args.video_ip,
-                server_port=args.video_port,
                 camera_index=args.camera,
                 frame_width=args.video_width,
                 frame_height=args.video_height,
                 target_fps=args.video_fps,
                 jpeg_quality=args.video_quality,
-                mqtt_client=None if args.no_video_mqtt else mqtt_client,
-                mqtt_topic=None if args.no_video_mqtt else args.video_topic,
+                mqtt_client=mqtt_client,
+                mqtt_topic=args.video_topic,
                 mqtt_qos=args.video_mqtt_qos
             )
         except Exception as error:
