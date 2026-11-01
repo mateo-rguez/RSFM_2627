@@ -23,6 +23,7 @@ TIMEOUT_SENAL_S = 2.0
 TITULO_VENTANA = "Estacion de Control - Video Barco Solar"
 ANCHO_AVISO = 640
 ALTO_AVISO = 480
+VIDEO_RECORD_FPS = 30.0
 
 hay_senal = False
 
@@ -54,12 +55,39 @@ def comprobar_senal(ultimo_fotograma, titulo_ventana=TITULO_VENTANA):
     return cv2.waitKey(1) & 0xFF == ord('q')
 
 
-def run_receiver(stop_event=None, show_window=True, mqtt_frame_queue=None):
+def crear_grabador_mp4(output_path, frame, fps=VIDEO_RECORD_FPS):
+    """Crea un grabador MP4 usando el tamaño del primer fotograma válido."""
+    height, width = frame.shape[:2]
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    grabador = cv2.VideoWriter(
+        str(output_path),
+        fourcc,
+        fps,
+        (width, height)
+    )
+
+    if not grabador.isOpened():
+        grabador.release()
+        print(
+            "[ERROR] No se pudo crear el archivo de vídeo '{}'.".format(
+                output_path
+            )
+        )
+        return None
+
+    print("[INFO] Grabando vídeo MQTT en '{}'.".format(output_path))
+    return grabador
+
+
+def run_receiver(stop_event=None, show_window=True, mqtt_frame_queue=None,
+                 record_video=False, output_path=None):
     """Recibe vídeo exclusivamente desde ``mqtt_frame_queue``.
 
     La cola debe contener payloads MQTT con el formato ``timestamp + JPEG``.
     El bucle MQTT se ejecuta en segundo plano y este receptor se mantiene en
     el hilo principal para que OpenCV/HighGUI funcione correctamente.
+    ``record_video`` solo debe activarse en modo sin ventana; en ese caso los
+    fotogramas válidos se guardan en ``output_path``.
     """
     if cv2 is None or np is None:
         raise ImportError(
@@ -71,6 +99,11 @@ def run_receiver(stop_event=None, show_window=True, mqtt_frame_queue=None):
             "Se necesita una cola con los fotogramas recibidos por MQTT"
         )
 
+    if record_video and not output_path:
+        raise ValueError(
+            "Se necesita una ruta de salida para grabar el vídeo"
+        )
+
     global hay_senal
     hay_senal = False
 
@@ -78,6 +111,7 @@ def run_receiver(stop_event=None, show_window=True, mqtt_frame_queue=None):
     frame_count = 0
     fps_timer = time.time()
     ultimo_fotograma = time.time()
+    grabador = None
 
     try:
         while stop_event is None or not stop_event.is_set():
@@ -104,6 +138,13 @@ def run_receiver(stop_event=None, show_window=True, mqtt_frame_queue=None):
                 if show_window and comprobar_senal(ultimo_fotograma):
                     break
                 continue
+
+            # Esta rama solo se ejecuta cuando se usa --no-video-window.
+            if record_video:
+                if grabador is None:
+                    grabador = crear_grabador_mp4(output_path, frame)
+                if grabador is not None:
+                    grabador.write(frame)
 
             ultimo_fotograma = time.time()
             if not hay_senal:
@@ -132,6 +173,9 @@ def run_receiver(stop_event=None, show_window=True, mqtt_frame_queue=None):
     except KeyboardInterrupt:
         print("\n[INFO] Recepción de vídeo finalizada.")
     finally:
+        if grabador is not None:
+            grabador.release()
+            print("[INFO] Archivo MP4 cerrado: '{}'.".format(output_path))
         if show_window:
             cv2.destroyAllWindows()
 

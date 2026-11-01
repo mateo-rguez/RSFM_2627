@@ -17,6 +17,9 @@ DEFAULT_TOPIC = os.getenv("MQTT_TOPIC", "wifi-halow/telemetria")
 DEFAULT_OUTPUT = Path(__file__).resolve().with_name(
     "telemetria_recibida.jsonl"
 )
+DEFAULT_VIDEO_OUTPUT = Path(__file__).resolve().with_name(
+    "video_recibido.mp4"
+)
 DEFAULT_VIDEO_TOPIC = os.getenv("MQTT_VIDEO_TOPIC", "wifi-halow/video")
 DEFAULT_VIDEO_MQTT_QOS = int(os.getenv("MQTT_VIDEO_QOS", "0"))
 
@@ -41,7 +44,14 @@ def build_parser():
     parser.add_argument(
         "--no-video-window",
         action="store_true",
-        help="Recibir vídeo sin abrir una ventana de OpenCV."
+        help="No abrir ventana y guardar el vídeo recibido en MP4."
+    )
+
+    parser.add_argument(
+        "--video-output",
+        type=Path,
+        default=DEFAULT_VIDEO_OUTPUT,
+        help="Archivo MP4 cuando se usa --no-video-window."
     )
 
     parser.add_argument(
@@ -96,6 +106,8 @@ def main():
     args = build_parser().parse_args()
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
+    if args.no_video_window:
+        args.video_output.parent.mkdir(parents=True, exist_ok=True)
 
     output_lock = threading.Lock()
 
@@ -244,7 +256,9 @@ def main():
             mqtt_loop_started = True
             video_receiver(
                 show_window=not args.no_video_window,
-                mqtt_frame_queue=video_queue
+                mqtt_frame_queue=video_queue,
+                record_video=args.no_video_window,
+                output_path=args.video_output
             )
 
     except KeyboardInterrupt:

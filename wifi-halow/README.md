@@ -159,9 +159,17 @@ Opciones adicionales del emisor de vídeo:
     --video-topic ...       Topic MQTT del vídeo
     --video-mqtt-qos 0      QoS MQTT del vídeo
 
-En una estación sin entorno gráfico se puede recibir el vídeo sin abrir una
-ventana con `--no-video-window`. El receptor seguirá validando y calculando
-las métricas de los fotogramas recibidos.
+En una estación sin entorno gráfico se puede recibir el vídeo y guardarlo como
+MP4 sin abrir una ventana con `--no-video-window`:
+
+    python3 wifi-halow/receptor_wifi_halow.py --no-video-window
+
+Por defecto se genera `video_recibido.mp4`. Se puede cambiar la ruta con:
+
+    --video-output /ruta/video.mp4
+
+La grabación MP4 solo se activa cuando se utiliza `--no-video-window`; en el
+modo normal con ventana no se crea ningún archivo de vídeo.
 
 Cada fotograma de vídeo atraviesa el broker MQTT. Para redes HaLow con poco
 ancho de banda se recomienda mantener QoS 0, bajar `--video-fps` o reducir
