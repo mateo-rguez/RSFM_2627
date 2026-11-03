@@ -80,7 +80,7 @@ def crear_grabador_mp4(output_path, frame, fps=VIDEO_RECORD_FPS):
 
 
 def run_receiver(stop_event=None, show_window=True, mqtt_frame_queue=None,
-                 record_video=False, output_path=None):
+                 record_video=False, output_path=None, frame_callback=None):
     """Recibe vídeo exclusivamente desde ``mqtt_frame_queue``.
 
     La cola debe contener payloads MQTT con el formato ``timestamp + JPEG``.
@@ -157,14 +157,15 @@ def run_receiver(stop_event=None, show_window=True, mqtt_frame_queue=None,
                 frame_count = 0
                 fps_timer = time.time()
 
+            info_text = "FPS: {:.1f} | Latencia: {:.1f} ms".format(fps, latency_ms)
+
             if show_window:
-                info_text = "FPS: {:.1f} | Latencia: {:.1f} ms".format(
-                    fps,
-                    latency_ms
-                )
-                cv2.putText(frame, info_text, (10, 30),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.8,
-                            (0, 255, 0), 2)
+                cv2.putText(frame, info_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+
+            if frame_callback is not None:
+                frame_callback(frame)
+
+            elif show_window:
                 cv2.imshow(TITULO_VENTANA, frame)
 
                 if cv2.waitKey(1) & 0xFF == ord('q'):
