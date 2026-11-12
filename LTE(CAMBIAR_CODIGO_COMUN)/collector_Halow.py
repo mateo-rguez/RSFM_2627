@@ -1,0 +1,197 @@
+"""
+Coordinador principal de telemetría.
+Se encarga de la interfaz de comunicaciones serie con el hardware (Adafruit Metro),
+consulta los módulos de altitud y movimiento, genera el paquete de datos unificado
+y lo almacena en un archivo local (datos.txt).
+"""
+
+import time
+import json
+
+from altitude_sensor_Halow import AltitudeSensor
+from motion_sensor_Halow import MotionSensor
+
+try:
+    import serial
+    SERIAL_AVAILABLE = True
+except ImportError:
+    SERIAL_AVAILABLE = False
+
+
+class TelemetryCollector:
+    """Gestiona la lectura coordinada de todos los sensores."""
+
+    def __init__(self, port='/dev/ttyUSB0', baudrate=38400):
+        self.ser = None
+        self.hardware_active = False
+
+        if SERIAL_AVAILABLE:
+            try:
+                self.ser = serial.Serial(port, baudrate, timeout=0.05)
+                self.ser.reset_input_buffer()
+                self.hardware_active = True
+
+                print("[INFO] Conexión serie activa en {}".format(port))
+
+            except Exception as e:
+                print(
+                    "[WARN] No se detectó hardware en {}: {}. "
+                    "Iniciando modo SIMULACIÓN.".format(port, e)
+                )
+
+        else:
+            print(
+                "[WARN] Librería pyserial no disponible. "
+                "Modo SIMULACIÓN activo."
+            )
+
+        # Instanciamos los módulos independientes
+        self.altitude_sensor = AltitudeSensor(
+            simulated=not self.hardware_active
+        )
+
+        self.motion_sensor = MotionSensor(
+            simulated=not self.hardware_active
+        )
+
+    def _read_serial_data(self):
+        """Lee y decodifica una trama JSON recibida desde el Arduino."""
+
+        if not self.hardware_active or not self.ser:
+            return {}
+
+        latest_data = {}
+
+        try:
+            while self.ser.in_waiting > 0:
+
+                line = self.ser.readline().decode(
+                    "utf-8",
+                    errors="ignore"
+                ).strip()
+
+                if not line:
+                    continue
+
+                # Ignorar mensajes informativos del Arduino sin perder
+                # la trama válida que ya se haya leído antes que ellos
+                if not line.startswith("{"):
+                    print("[ARDUINO] {}".format(line))
+                    continue
+
+                try:
+                    data = json.loads(line)
+                    latest_data = data
+
+                except ValueError:
+                    continue
+
+        except OSError as e:
+            print(
+                "[WARN] Error de comunicación serie: {}".format(e)
+            )
+            self.hardware_active = False
+
+        except Exception as e:
+            print(
+                "[WARN] Error leyendo puerto serie: {}".format(e)
+            )
+
+        return latest_data
+
+    def collect(self):
+        """
+        Genera el paquete completo de telemetría con timestamp.
+        Listo para enviar por Wi-Fi o registrar en disco.
+        """
+
+        raw = self._read_serial_data()
+
+        # Extraemos valores para cada módulo si existen
+        raw_dist = None
+        raw_accel = None
+        raw_gyro = None
+
+        if raw:
+
+            # Una trama mal formada solo debe invalidar su sensor,
+            # no detener el envío
+            ultrasonic = raw.get("ultrasonic")
+
+            if isinstance(ultrasonic, dict):
+                raw_dist = ultrasonic.get("distance_cm")
+
+            raw_accel = raw.get("accel")
+            raw_gyro = raw.get("gyro")
+
+        return {
+            "timestamp": round(time.time(), 3),
+            "altitude": self.altitude_sensor.read(
+                raw_distance_cm=raw_dist
+            ),
+            "motion": self.motion_sensor.read(
+                raw_accel=raw_accel,
+                raw_gyro=raw_gyro
+            )
+        }
+
+    def close(self):
+        """Cierra el puerto de forma segura."""
+
+        if self.ser and self.ser.is_open:
+            self.ser.close()
+
+
+if __name__ == "__main__":
+
+    collector = TelemetryCollector()
+    output_filename = "datos.json"
+
+    # Periodo de actualización de datos (en segundos)
+    period = 1.0
+
+    print(
+        "Iniciando adquisición a ({:.1f} Hz) Hz. "
+        "Guardando en '{}'".format(
+            1 / period,
+            output_filename
+        )
+    )
+
+    try:
+        while True:
+
+            packet = collector.collect()
+
+            # Mostrar por consola
+            print(
+                "[{}] Altitud: {} m (OK: {}) | "
+                "Accel Z: {} m/s² (OK: {})".format(
+                    packet['timestamp'],
+                    packet['altitude']['altitude_m'],
+                    packet['altitude']['valid'],
+                    packet['motion']['accel']['z'],
+                    packet['motion']['valid']
+                )
+            )
+
+            # Modo 'w' sobrescribe el archivo en cada iteración
+            # guardando solo el último registro
+            with open(
+                output_filename,
+                mode="w",
+                encoding="utf-8"
+            ) as f:
+                json.dump(packet, f, indent=2)
+
+            time.sleep(period)
+
+    except KeyboardInterrupt:
+        print(
+            "\nLectura finalizada. Último estado conservado en '{}'.".format(
+                output_filename
+            )
+        )
+
+    finally:
+        collector.close()
