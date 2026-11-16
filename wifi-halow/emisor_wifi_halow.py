@@ -7,22 +7,12 @@ El transporte de telemetría lo realiza MQTT mediante un broker.
 import argparse
 import json
 import os
-import sys
 import threading
 import time
-from pathlib import Path
 
 import paho.mqtt.client as mqtt
 
-
-# El collector existente no es un paquete Python.
-# Añadimos su carpeta al path para reutilizar la lógica de sensores.
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SENSORS_DIR = PROJECT_ROOT / "sensores"
-
-sys.path.insert(0, str(SENSORS_DIR))
-
-from collector_Halow import TelemetryCollector
+from emisor.collector_Halow import TelemetryCollector
 
 
 # IP fija del broker MQTT en la estación de control.
@@ -165,7 +155,7 @@ def build_parser():
 def iniciar_video(args, mqtt_client):
     """Arranca el transmisor MQTT en segundo plano."""
     try:
-        from video_sender_Halow import run_sender, cv2
+        from emisor.video_sender_Halow import run_sender, cv2
     except ImportError as error:
         print(
             "[ERROR] No se puede iniciar el vídeo. Instale OpenCV: {}".format(
@@ -349,4 +339,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

@@ -38,16 +38,17 @@ Archivos
 --------
 
 emisor_wifi_halow.py
-    Lee los sensores mediante el TelemetryCollector de la carpeta sensores,
+    Lee los sensores mediante el TelemetryCollector de la carpeta emisor/,
     convierte cada muestra a JSON y la publica en MQTT.
 
 receptor_wifi_halow.py
     Se suscribe al mismo topic MQTT, muestra las muestras recibidas y las
     guarda una por línea en telemetria_recibida.jsonl.
 
-video_sender_Halow.py / video_receiver_Halow.py
-    Capturan, codifican y muestran vídeo. Comparten el paquete binario del
-    fotograma mediante el topic MQTT de vídeo.
+emisor/
+    Contiene los módulos del emisor: sensores, TelemetryCollector y
+    video_sender_Halow.py. El receptor de vídeo está en video_receiver_Halow.py.
+    Ambos lados comparten el paquete binario del fotograma mediante MQTT.
 
 Requisitos
 ----------
