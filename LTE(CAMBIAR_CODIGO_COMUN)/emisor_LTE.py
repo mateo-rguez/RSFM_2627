@@ -12,7 +12,7 @@ import time
 
 import paho.mqtt.client as mqtt
 
-from emisor.collector_Halow import TelemetryCollector
+from emisor.collector_LTE import TelemetryCollector
 
 
 # IP fija del broker MQTT en la estación de control.
@@ -21,7 +21,7 @@ DEFAULT_BROKER = "100.83.36.20"
 DEFAULT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 DEFAULT_TOPIC = os.getenv(
     "MQTT_TOPIC",
-    "wifi-halow/telemetria"
+    "lte/telemetria"
 )
 DEFAULT_INTERVAL = float(os.getenv("MQTT_INTERVAL", "1.0"))
 DEFAULT_VIDEO_CAMERA = int(os.getenv("VIDEO_CAMERA", "0"))
@@ -29,7 +29,7 @@ DEFAULT_VIDEO_WIDTH = int(os.getenv("VIDEO_WIDTH", "320"))
 DEFAULT_VIDEO_HEIGHT = int(os.getenv("VIDEO_HEIGHT", "240"))
 DEFAULT_VIDEO_FPS = float(os.getenv("VIDEO_FPS", "15"))
 DEFAULT_VIDEO_QUALITY = int(os.getenv("VIDEO_JPEG_QUALITY", "35"))
-DEFAULT_VIDEO_TOPIC = os.getenv("MQTT_VIDEO_TOPIC", "wifi-halow/video")
+DEFAULT_VIDEO_TOPIC = os.getenv("MQTT_VIDEO_TOPIC", "lte/video")
 DEFAULT_VIDEO_MQTT_QOS = int(os.getenv("MQTT_VIDEO_QOS", "0"))
 
 
@@ -155,7 +155,7 @@ def build_parser():
 def iniciar_video(args, mqtt_client):
     """Arranca el transmisor MQTT en segundo plano."""
     try:
-        from emisor.video_sender_Halow import run_sender, cv2
+        from emisor.video_sender_LTE import run_sender, cv2
     except ImportError as error:
         print(
             "[ERROR] No se puede iniciar el vídeo. Instale OpenCV: {}".format(

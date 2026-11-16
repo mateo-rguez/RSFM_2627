@@ -7,10 +7,10 @@ from pathlib import Path
 
 DEFAULT_BROKER = os.getenv("MQTT_BROKER", "127.0.0.1")
 DEFAULT_PORT = int(os.getenv("MQTT_PORT", "1883"))
-DEFAULT_TOPIC = os.getenv("MQTT_TOPIC", "wifi-halow/telemetria")
+DEFAULT_TOPIC = os.getenv("MQTT_TOPIC", "lte/telemetria")
 DEFAULT_OUTPUT = Path(__file__).resolve().parent.parent / "telemetria_recibida.jsonl"
 DEFAULT_VIDEO_OUTPUT = Path(__file__).resolve().parent.parent / "video_recibido.mp4"
-DEFAULT_VIDEO_TOPIC = os.getenv("MQTT_VIDEO_TOPIC", "wifi-halow/video")
+DEFAULT_VIDEO_TOPIC = os.getenv("MQTT_VIDEO_TOPIC", "lte/video")
 DEFAULT_VIDEO_MQTT_QOS = int(os.getenv("MQTT_VIDEO_QOS", "0"))
 
 
