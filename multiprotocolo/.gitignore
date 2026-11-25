@@ -1,0 +1,12 @@
+# Ficheros que Git NO debe subir al repositorio
+
+# Cachés de Python
+__pycache__/
+*.pyc
+
+# Entornos virtuales
+venv/
+.venv/
+
+# Resultados de las pruebas (quitar esta línea si se quieren compartir)
+estacion/resultados/
