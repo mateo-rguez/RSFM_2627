@@ -1,0 +1,198 @@
+================================================================================
+  SISTEMA DE TELEMETRÍA MULTIPROTOCOLO - BARCO SOLAR
+  Wi-Fi HaLow · LoRa (TTN) · BLE
+================================================================================
+
+1. QUÉ ES
+---------
+Un único sistema para enviar la telemetría del barco (y vídeo, cuando el
+protocolo lo permite) desde la Raspberry Pi hasta la estación de tierra (PC),
+y medir las MISMAS prestaciones con cada protocolo para poder compararlos.
+
+Las pruebas se hacen POR TURNOS: en cada prueba se elige un protocolo, el
+mismo en el emisor y en la estación.
+
+Lo que se mide en los tres protocolos (prestaciones comunes):
+  - Paquetes recibidos y perdidos, y tasa de pérdida
+  - Latencia: última, media, mínima, percentil 95 y máxima
+  - Jitter (variación de la latencia entre paquetes seguidos)
+  - Intervalo medio entre paquetes y régimen útil (bit/s)
+  - Disponibilidad (% de ventanas de tiempo con algún paquete)
+  - Tiempo hasta el primer dato
+  - Vídeo (HaLow y BLE): fotogramas, fps, kbit/s, latencia y descartados
+
+Además, cada protocolo muestra sus prestaciones exclusivas:
+  - LoRa:  RSSI, SNR, SF, pasarelas, tiempo en el aire y cuota diaria de TTN,
+           pérdidas por f_cnt, latencia separada en radio+TTN y TTN->PC
+  - BLE:   MTU negociada, tiempo de búsqueda+conexión, RSSI del anuncio,
+           desconexiones
+  - HaLow: tiempo de conexión MQTT, reconexiones, QoS y, si se indica la
+           interfaz, señal, velocidad física y reintentos de la radio
+
+
+2. ESTRUCTURA DE CARPETAS
+------------------------
+multiprotocolo/
+  barco/                      -> se copia a la RASPBERRY PI
+    emisor_barco.py             programa principal del emisor
+    formato_paquete.py          formato común del paquete (¡igual en PC!)
+    enlace_halow.py             envío por Wi-Fi HaLow (MQTT)
+    enlace_lora.py              envío por LoRa (USB -> CubeCell -> TTN)
+    enlace_ble.py               envío por BLE (servidor GATT con bless)
+    camara.py                   captura y compresión JPEG del vídeo
+    CubeCell_Telemetria_v2.ino  sketch de la CubeCell (sin AppKey)
+    formateador_ttn.js          formateador opcional para la consola de TTN
+
+  estacion/                   -> se usa en el PC (Windows)
+    estacion.py                 programa principal de la estación
+    comparar.py                 compara los resultados de los 3 protocolos
+    formato_paquete.py          formato común del paquete (¡igual que barco/!)
+    receptor/
+      adaptador_halow.py        recepción Wi-Fi HaLow (MQTT, Mosquitto)
+      adaptador_lora.py         recepción LoRa (MQTT de TTN con TLS)
+      adaptador_ble.py          recepción BLE (bleak)
+      centro.py                 une recepción, cálculos, ficheros y dashboard
+      prestaciones.py           cálculo de las prestaciones
+      dashboard.py              ventana gráfica (PyQt5 + matplotlib)
+      registro.py               guarda las muestras y el resumen de cada prueba
+      video.py                  reensamblado y descodificación del vídeo
+      estado_sensores.py        estado (real/simulado/no válido) de sensores
+      configuracion.py          opciones de la línea de comandos
+
+En la Raspberry, junto a los ficheros de barco/, deben estar también los del
+equipo: collector.py, altitude_sensor.py y motion_sensor.py.
+
+
+3. CÓMO FUNCIONA (RESUMEN)
+--------------------------
+Raspberry (emisor_barco.py):
+  1. Lee los sensores con TelemetryCollector.
+  2. Crea un paquete de 30 bytes (formato_paquete.py) con: número de
+     secuencia (seq), hora de envío, altitud, aceleración x/y/z y validez.
+  3. Lo envía por el protocolo elegido. Con --video, envía también la cámara
+     (cada fotograma lleva su hora de envío + la imagen JPEG).
+
+PC (estacion.py):
+  1. El adaptador del protocolo recibe los bytes.
+  2. Se desempaqueta el paquete y se calculan las prestaciones:
+       pérdida  = huecos en seq
+       latencia = hora de llegada al PC - hora de envío en la Raspberry
+  3. Se muestra todo en el dashboard y se guarda en estacion/resultados/.
+
+El paquete es idéntico en los tres protocolos (30 bytes):
+
+   versión | seq  | hora de envío | altitud | acc_x | acc_y | acc_z | flags
+    1 B    | 4 B  |     8 B       |   4 B   |  4 B  |  4 B  |  4 B  |  1 B
+
+   Un valor no válido viaja como NaN. flags: bit 0 = altitud válida,
+   bit 1 = aceleración válida, bit 2 = datos simulados (sin placa).
+
+IMPORTANTE: si se cambia formato_paquete.py, hay que cambiarlo IGUAL en
+barco/ y en estacion/ (y en el .ino y el formateador de TTN si cambia el
+tamaño). Si no, la estación rechazará los paquetes.
+
+
+4. REQUISITOS
+-------------
+Raspberry Pi (dentro de un entorno virtual):
+    python3 -m venv --system-site-packages ~/rsfm/venv
+    source ~/rsfm/venv/bin/activate
+    pip install paho-mqtt pyserial bless dbus-next
+    sudo apt install -y python3-opencv
+  - El usuario debe estar en el grupo "video" para usar la cámara:
+    sudo usermod -aG video $USER   (y volver a iniciar sesión)
+  - No mover nunca la carpeta venv: si hace falta, crear otra nueva.
+
+PC con Windows (Python 3.13 o superior):
+    py -m pip install paho-mqtt bleak PyQt5 matplotlib opencv-python numpy
+  - Wi-Fi HaLow: broker Mosquitto en el PC (listener 1883 y
+    allow_anonymous true en mosquitto.conf).
+  - BLE: Bluetooth del PC ENCENDIDO.
+  - LoRa: API key de la aplicación de TTN en una variable de entorno
+    (nunca en el código):  $env:TTN_MQTT_API_KEY = "NNSXS...."
+
+Relojes sincronizados (necesario para que la latencia sea correcta):
+  - El PC hace de servidor NTP (servicio w32time, puerto UDP 123 abierto).
+  - La Raspberry usa chrony con "server 10.42.0.1 iburst" (y
+    "maxdistance 16" en /etc/chrony/chrony.conf).
+  - Antes de medir: "chronyc sources" debe mostrar ^* delante del PC.
+    Anotar "chronyc tracking" al empezar y al acabar cada prueba.
+
+
+5. CÓMO HACER UNA PRUEBA
+------------------------
+Primero se arranca la estación en el PC y después el emisor en la Raspberry.
+
+  Wi-Fi HaLow
+    PC:          py estacion.py --protocolo halow
+    Raspberry:   python3 emisor_barco.py --protocolo halow --broker <IP del PC> --video
+
+  BLE
+    PC:          py estacion.py --protocolo ble
+    Raspberry:   python3 emisor_barco.py --protocolo ble --video
+
+  LoRa
+    PC:          $env:TTN_MQTT_API_KEY = "NNSXS...."
+                 py estacion.py --protocolo lora
+    Raspberry:   python3 emisor_barco.py --protocolo lora
+    (La CubeCell debe tener cargado CubeCell_Telemetria_v2.ino con la AppKey.
+     Hace falta cobertura de una pasarela TTN.)
+
+Para terminar: cerrar la ventana del dashboard (o Ctrl+C) y Ctrl+C en el
+emisor.
+
+Opciones útiles:
+  Estación:
+    --descripcion "exterior, 50 m"   nota que se guarda con los resultados
+    --sin-dashboard --duracion 600   prueba de 10 minutos solo en consola
+    --sin-video                      no recibir vídeo
+  Emisor:
+    --intervalo 70          segundos entre paquetes (por defecto 1 s; LoRa 70 s).
+                            Usar 70 en los tres para comparar en igualdad.
+    --interfaz-halow wlan1  envía señal/velocidad/reintentos de la radio HaLow
+    --fps 5 --ancho 160 --alto 120 --calidad 30   parámetros del vídeo
+                            (usar los mismos en HaLow y BLE para comparar)
+
+
+6. RESULTADOS Y COMPARACIÓN
+---------------------------
+Cada prueba crea en estacion/resultados/:
+  <protocolo>_<fecha>_muestras.jsonl   una línea por paquete recibido
+  <protocolo>_<fecha>_resumen.json     prestaciones finales de la prueba
+
+Para comparar los protocolos (usa el resumen más reciente de cada uno):
+    py comparar.py
+Genera resultados/comparativa.csv (se abre con Excel) y
+resultados/comparativa.png (gráficas de barras).
+También se pueden indicar ficheros concretos:
+    py comparar.py resultados\halow_..._resumen.json resultados\ble_..._resumen.json
+
+
+7. PROBLEMAS FRECUENTES
+-----------------------
+  - "No module named 'bless'" (u otra librería): el entorno virtual activo no
+    es el que tiene la librería, o se movió la carpeta venv. Comprobar con
+    "which python3" y reinstalar en el entorno correcto.
+  - Cámara "Permission denied": falta el grupo video (ver apartado 4).
+  - BLE "Bluetooth radio is not powered on": encender el Bluetooth del PC.
+  - BLE "MTU < 457": los fotogramas llegarán cortados (aparecen como
+    descartados).
+  - LoRa "OTAA_PENDIENTE" o "BUSY": la CubeCell no se ha unido a TTN. Revisar
+    cobertura, antena y claves (DevEUI, JoinEUI, AppKey).
+  - LoRa "ERROR:LONGITUD": la CubeCell tiene el sketch antiguo (16 bytes).
+    Cargar CubeCell_Telemetria_v2.ino.
+  - Latencia negativa o absurda: relojes no sincronizados (revisar chrony).
+  - Altitud "NO válida": el ultrasonido no ve nada entre 2 y 400 cm (revisar
+    la orientación de la placa o poner un objeto delante).
+
+
+8. NORMAS PARA EL REPOSITORIO
+-----------------------------
+  - NUNCA subir claves: ni la AppKey de la CubeCell ni la API key de TTN.
+    El .ino del repositorio tiene la AppKey a ceros: cada uno pega la suya en
+    su copia local y NO la sube (si "git status" muestra el .ino modificado,
+    no hacer commit de ese fichero).
+  - No subir entornos virtuales (venv) ni resultados de pruebas sin acordarlo
+    (lo impide el fichero .gitignore).
+  - Si se cambia el formato del paquete, avisar al resto del equipo.
+================================================================================
